@@ -97,6 +97,8 @@ else if account_name and account_key are non-empty:
     Authorization = "SharedKey " + account_name + ":" + base64(signature)
 else:
     request sent without Authorization header (will fail server-side)
+    # ^ Intentional: this is a caller error. The library does not validate
+    #   auth configuration at construction time (per Principle IV / error model).
 ```
 
 ## Error Model

@@ -45,10 +45,10 @@ These are implementation details in the `.cpp` file. They do not appear in the p
 | Helper | Purpose |
 |--------|---------|
 | `build_date_string()` | Generate current UTC time in RFC 1123 format for `x-ms-date`. |
-| `hmac_sha256_sign(key_bytes, string_to_sign)` | HMAC-SHA256 sign the StringToSign using decoded account key. Returns base64-encoded signature. |
+| `hmac_sha256_sign(account_key_b64, string_to_sign)` | Base64-decode the account key, HMAC-SHA256 sign the StringToSign, and return base64-encoded signature. |
 | `base64_decode(encoded)` | Decode a base64 string to raw bytes (for account key). |
 | `base64_encode(raw_bytes, len)` | Encode raw bytes to base64 string (for signature output). |
-| `build_auth_header(...)` | Construct the full `Authorization` header value for SharedKey mode. |
+| `build_shared_key_auth_header(...)` | Construct the full `Authorization` header value for SharedKey mode. |
 | `normalize_endpoint(endpoint)` | Strip trailing slash from endpoint URL. |
 | `perform_request(method, url, headers, body)` | Execute an HTTP request via libcurl and return the HTTP status code (or 0 on network error). |
 

@@ -5,7 +5,7 @@
 
 ## Summary
 
-Implement the two authentication modes (Shared Key Lite and Bearer Token) and the `CreateTableIfNotExists` operation for the `AzureTableClient` C++ library. The Shared Key path constructs the StringToSign per Azure Table Storage Shared Key Lite format, HMAC-SHA256 signs it with OpenSSL, and emits the `Authorization: SharedKey` header. The Bearer Token path emits `Authorization: Bearer {token}`. `CreateTableIfNotExists` POSTs to `{endpoint}/Tables` and treats HTTP 201 and 409 as success. All Shared Key and CreateTable scenarios are verified against Azurite.
+Implement the two authentication modes (Shared Key and Bearer Token) and the `CreateTableIfNotExists` operation for the `AzureTableClient` C++ library. The Shared Key path constructs the StringToSign per Azure Table Storage Shared Key format, HMAC-SHA256 signs it with OpenSSL, and emits the `Authorization: SharedKey` header. The Bearer Token path emits `Authorization: Bearer {token}`. `CreateTableIfNotExists` POSTs to `{endpoint}/Tables` and treats HTTP 201 and 409 as success. All Shared Key and CreateTable scenarios are verified against Azurite.
 
 ## Technical Context
 
