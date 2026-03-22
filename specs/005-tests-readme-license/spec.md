@@ -79,6 +79,7 @@ As a potential user or contributor, I want a LICENSE file in the repository root
 - Q: How should the build system discover and link Catch2? → A: pkg-config (`PKG_CHECK_MODULES([CATCH2], [catch2-with-main])`), consistent with existing libcurl/openssl discovery.
 - Q: Should tests share a single table or create/destroy a unique table per test case? → A: Shared table with unique PartitionKey/RowKey per test case for speed; single fixture setup.
 - Q: How should test source files be organized? → A: Single test file with Catch2 tags for grouping (sync, async, edge cases).
+- Q: How should Bearer Token auth be tested when Azurite only supports Shared Key? → A: Header-level verification. Construct a Bearer Token client and call `SetBearerToken()`, then verify the `Authorization: Bearer {token}` header is emitted. Full CRUD correctness relies on Shared Key tests; Bearer Token tests validate the auth dispatch path only.
 
 ## Requirements *(mandatory)*
 
@@ -87,9 +88,9 @@ As a potential user or contributor, I want a LICENSE file in the repository root
 - **FR-001**: The project MUST include a test executable built using the Catch2 testing framework, with all tests in a single source file organized by Catch2 tags (`[sync]`, `[async]`, `[edge]`).
 - **FR-002**: The test suite MUST cover all public synchronous methods of `AzureTableClient`: `CreateTableIfNotExists`, `GetEntity`, `UpsertEntity`, `BatchUpsertEntities`, `QueryEntities`, and `DeleteEntity`.
 - **FR-003**: The test suite MUST cover all public asynchronous methods of `AzureTableClient`: `GetEntityAsync`, `UpsertEntityAsync`, `BatchUpsertEntitiesAsync`, `QueryEntitiesAsync`, and `DeleteEntityAsync`.
-- **FR-004**: The test suite MUST cover both authentication modes: Shared Key and Bearer Token.
+- **FR-004**: The test suite MUST cover both authentication modes: Shared Key (full CRUD against Azurite) and Bearer Token (header-level verification only, since Azurite does not support Bearer Token auth). Bearer Token tests MUST verify that (a) the Bearer Token constructor produces a usable client, (b) `SetBearerToken()` updates the token on a live client instance, and (c) requests include the `Authorization: Bearer {token}` header.
 - **FR-005**: The test suite MUST be runnable against a local Azure Table Storage emulator (Azurite) with no cloud credentials required.
-- **FR-006**: The test suite MUST include edge-case tests for invalid inputs (missing keys, empty entities, batch size exceeding 100).
+- **FR-006**: The test suite MUST include edge-case tests for invalid inputs: missing `PartitionKey`, missing `RowKey`, empty entity (`{}`), batch size exceeding 100, non-existent entity retrieval, and filter matching no entities.
 - **FR-007**: The test executable MUST be buildable as part of the existing autotools build system.
 - **FR-008**: A README.md file MUST exist in the repository root and contain: project description, prerequisites, build instructions, test instructions, usage examples, and license reference.
 - **FR-009**: A LICENSE file MUST exist in the repository root containing the full MIT license text with "2026" as the year and "Metaverse Systems" as the copyright holder.
@@ -107,7 +108,7 @@ As a potential user or contributor, I want a LICENSE file in the repository root
 
 ### Measurable Outcomes
 
-- **SC-001**: All test cases pass when run against a local Azurite instance, with 100% of public API methods covered by at least one test.
+- **SC-001**: All test cases pass when run against a local Azurite instance, with 100% of public API methods (11 CRUD methods plus `SetBearerToken()`) covered by at least one test. Constructor coverage is implicit via client instantiation in every test.
 - **SC-002**: A new contributor can build the project and run all tests within 5 minutes by following the README instructions alone.
 - **SC-003**: The test suite completes execution in under 30 seconds on a standard development machine.
 - **SC-004**: The README.md contains all required sections (description, prerequisites, build, test, usage, license) and is readable without prior project knowledge.

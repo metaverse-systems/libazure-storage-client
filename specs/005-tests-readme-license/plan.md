@@ -5,7 +5,7 @@
 
 ## Summary
 
-Add a Catch2 v3 test suite covering all 11 public methods of `AzureTableClient` (6 sync, 5 async) plus edge cases, integrate the test executable into the existing Autotools build, and add README.md and LICENSE (MIT) files to the repository root.
+Add a Catch2 v3 test suite covering all 11 CRUD methods of `AzureTableClient` (6 sync, 5 async), `SetBearerToken()`, and edge cases. Integrate the test executable into the existing Autotools build and add README.md and LICENSE (MIT) files to the repository root. Bearer Token auth is tested at the header-dispatch level only (Azurite does not support Bearer Token).
 
 ## Technical Context
 
@@ -17,7 +17,7 @@ Add a Catch2 v3 test suite covering all 11 public methods of `AzureTableClient` 
 **Project Type**: Library (shared `.so`/`.dll`)  
 **Performance Goals**: Test suite completes in <30 seconds  
 **Constraints**: No new runtime dependencies; Catch2 is test-time only  
-**Scale/Scope**: 1 class, 11 public methods, ~15-20 test cases
+**Scale/Scope**: 1 class, 14 public members (2 constructors + `SetBearerToken()` + 11 CRUD methods), ~18-23 test cases
 
 ## Constitution Check
 
