@@ -116,8 +116,8 @@ As a library consumer, I call `BatchUpsertEntitiesAsync` with a table name, a ve
 - **FR-007**: `BatchUpsertEntitiesAsync` MUST produce the same result as `BatchUpsertEntities` for identical inputs, delivered via callback.
 - **FR-008**: Each async method MUST validate inputs (e.g., missing PartitionKey/RowKey) using the same rules as its synchronous counterpart before or during execution.
 - **FR-009**: The background thread for each async operation MUST be detached or otherwise managed so that it does not block the calling thread or require manual joining by the caller.
-- **FR-011**: Each async method MUST capture a snapshot of all required client state (table endpoint, account name, account key, bearer token) at call time before spawning the background thread. The background thread MUST use this snapshot, not the live client members.
 - **FR-010**: If the user-provided callback is empty (default-constructed `std::function`), the async method MUST still execute the operation but skip the callback invocation.
+- **FR-011**: Each async method MUST capture a snapshot of all required client state (table endpoint, account name, account key, bearer token) at call time before spawning the background thread. The background thread MUST use this snapshot, not the live client members.
 
 ## Assumptions
 
@@ -135,4 +135,4 @@ As a library consumer, I call `BatchUpsertEntitiesAsync` with a table name, a ve
 - **SC-001**: All five async methods invoke their callback with a result that matches the output of the corresponding synchronous method for the same inputs.
 - **SC-002**: The calling thread returns from any async method call without waiting for the network round-trip to complete.
 - **SC-003**: Multiple async operations issued in rapid succession all complete successfully and invoke their callbacks independently.
-- **SC-004**: Async operations against Azurite complete and invoke their callbacks within a reasonable time, comparable to the synchronous equivalents plus minimal threading overhead.
+- **SC-004**: Async operations against Azurite complete and invoke their callbacks in a time comparable to the synchronous equivalents (thread spawn and callback dispatch add no more than a few milliseconds of overhead).

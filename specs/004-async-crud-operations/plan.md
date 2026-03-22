@@ -30,7 +30,7 @@ Implement the five asynchronous CRUD methods on `AzureTableClient` (`GetEntityAs
 | II | Azure REST API Fidelity | PASS | Async methods delegate directly to the sync implementations which already faithfully implement the REST API. No changes to HTTP request construction. |
 | III | Dual Authentication — Shared Key and Bearer Token | PASS | Copy-at-dispatch captures whichever auth mode is active. Both modes work identically in async as in sync. |
 | IV | Minimal Surface Area | PASS | No new public methods — only implementing already-declared stubs. No retry, no thread pool, no convenience wrappers. |
-| V | Cross-Platform Portability | PASS | `std::thread` is portable across GCC, Clang, and MinGW. No platform-specific code. No build system changes (libpthread is already linked by default on Linux; MinGW links winpthread). |
+| V | Cross-Platform Portability | PASS | `std::thread` is portable across GCC, Clang, and MinGW. No platform-specific code. Build system requires adding `-pthread` to `src/Makefile.am` for `std::thread` to link on Linux; harmless on MinGW. |
 
 **Gate result**: ALL PASS. No violations. Proceeding to Phase 0.
 
@@ -58,7 +58,7 @@ include/libazure-storage-client/
 
 src/
 ├── azure-storage-client.cpp   # Implementation file (all changes here)
-├── Makefile.am                # Build rules (no changes expected)
+├── Makefile.am                # Build rules (add `-pthread` flag)
 └── Makefile.in                # Generated (no changes)
 ```
 
@@ -78,6 +78,6 @@ src/
 | II | Azure REST API Fidelity | PASS | Async methods delegate directly to sync implementations. No changes to HTTP request construction, headers, or API compliance. |
 | III | Dual Authentication — Shared Key and Bearer Token | PASS | Copy-at-dispatch captures whichever auth mode is active. Both modes preserved identically in async path. |
 | IV | Minimal Surface Area | PASS | No new public methods. No retry logic, thread pools, or convenience wrappers. Build system change (`-pthread`) is minimal and required for `std::thread` to link. |
-| V | Cross-Platform Portability | PASS | `std::thread` supported on all target platforms (GCC, Clang, MinGW). `-pthread` flag is harmless on MinGW. No platform-specific code. Build system may need `-pthread` added to `src/Makefile.am`. |
+| V | Cross-Platform Portability | PASS | `std::thread` supported on all target platforms (GCC, Clang, MinGW). `-pthread` flag is harmless on MinGW. No platform-specific code. Build system requires `-pthread` added to `src/Makefile.am` (see research R5). |
 
 **Gate result**: ALL PASS post-design. Ready for `/speckit.tasks`.
