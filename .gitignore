@@ -1,0 +1,45 @@
+# Autotools generated files
+/aclocal.m4
+/autom4te.cache/
+/compile
+/config.guess
+/config.h
+/config.h.in
+/config.h.in~
+/config.log
+/config.status
+/config.sub
+/configure
+/depcomp
+/install-sh
+/libtool
+/ltmain.sh
+/missing
+/stamp-h1
+configure~
+Makefile
+Makefile.in
+
+# libtool
+*.la
+*.lo
+.libs/
+.deps/
+
+# Compiled objects
+*.o
+*.obj
+
+# pkg-config generated
+azure-storage-client.pc
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+.vscode/
+.idea/
+
+# Environment
+.env*

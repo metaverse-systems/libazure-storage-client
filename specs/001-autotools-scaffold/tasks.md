@@ -19,7 +19,7 @@
 
 **Purpose**: Create project directory structure and vendor required Autotools macros.
 
-- [ ] T001 Create m4/ directory and vendor the AX_CXX_COMPILE_STDCXX macro into m4/ax_cxx_compile_stdcxx.m4. Download the canonical version from the GNU Autoconf Archive (https://git.savannah.gnu.org/cgit/autoconf-archive.git/plain/m4/ax_cxx_compile_stdcxx.m4) or copy from the system autoconf-archive package. This macro is invoked as `AX_CXX_COMPILE_STDCXX(20, noext, mandatory)` — see research.md §1.
+- [X] T001 Create m4/ directory and vendor the AX_CXX_COMPILE_STDCXX macro into m4/ax_cxx_compile_stdcxx.m4. Download the canonical version from the GNU Autoconf Archive (https://git.savannah.gnu.org/cgit/autoconf-archive.git/plain/m4/ax_cxx_compile_stdcxx.m4) or copy from the system autoconf-archive package. This macro is invoked as `AX_CXX_COMPILE_STDCXX(20, noext, mandatory)` — see research.md §1.
 
 ---
 
@@ -29,8 +29,8 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 [P] Create configure.ac at repository root. Must include: `AC_INIT([azure-storage-client], [0.0.1])`, `AM_INIT_AUTOMAKE([foreign subdir-objects])`, `LT_INIT`, `AC_PROG_CXX`, `AC_CONFIG_MACRO_DIRS([m4])`, `AX_CXX_COMPILE_STDCXX(20, noext, mandatory)`, `PKG_CHECK_MODULES([LIBCURL], [libcurl])`, `PKG_CHECK_MODULES([OPENSSL], [openssl])`, and `AC_CONFIG_FILES([Makefile src/Makefile azure-storage-client.pc])`. See research.md §1, §4 for details.
-- [ ] T003 [P] Create top-level Makefile.am at repository root. Must include: `ACLOCAL_AMFLAGS = -I m4`, `SUBDIRS = src`, `pkgconfigdir = $(libdir)/pkgconfig`, `pkgconfig_DATA = azure-storage-client.pc`, and `EXTRA_DIST = m4/ax_cxx_compile_stdcxx.m4`.
+- [X] T002 [P] Create configure.ac at repository root. Must include: `AC_INIT([azure-storage-client], [0.0.1])`, `AM_INIT_AUTOMAKE([foreign subdir-objects])`, `LT_INIT`, `AC_PROG_CXX`, `AC_CONFIG_MACRO_DIRS([m4])`, `AX_CXX_COMPILE_STDCXX(20, noext, mandatory)`, `PKG_CHECK_MODULES([LIBCURL], [libcurl])`, `PKG_CHECK_MODULES([OPENSSL], [openssl])`, and `AC_CONFIG_FILES([Makefile src/Makefile azure-storage-client.pc])`. See research.md §1, §4 for details.
+- [X] T003 [P] Create top-level Makefile.am at repository root. Must include: `ACLOCAL_AMFLAGS = -I m4`, `SUBDIRS = src`, `pkgconfigdir = $(libdir)/pkgconfig`, `pkgconfig_DATA = azure-storage-client.pc`, and `EXTRA_DIST = m4/ax_cxx_compile_stdcxx.m4`.
 
 **Checkpoint**: Foundation ready — user story implementation can now begin.
 
@@ -44,10 +44,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T004 [P] [US1] Create public header src/azure-storage-client.hpp with the full AzureTableClient class declaration. Include guards, `#include <string>`, `#include <vector>`, `#include <functional>`, `#include <libazure-storage-client/json.hpp>`. Declare all 14 public methods from data-model.md (two constructors, SetBearerToken, CreateTableIfNotExists, GetEntity, UpsertEntity, BatchUpsertEntities, QueryEntities, DeleteEntity, and all five async variants). Declare private members without underscore suffix (account_name, account_key, table_endpoint, bearer_token). See data-model.md for full method signatures and types.
-- [ ] T005 [P] [US1] Create stub implementation src/azure-storage-client.cpp. Include `"azure-storage-client.hpp"`. Implement all 14 methods as stubs: constructors are no-ops, SetBearerToken is no-op, bool methods return false, GetEntity returns `nlohmann::json{}`, QueryEntities returns empty vector, async methods invoke their callback with the default value. Use `this->` for all member access — see data-model.md for stub behavior per method.
-- [ ] T006 [US1] Create src/Makefile.am with library build rules. Set `lib_LTLIBRARIES = libazure-storage-client.la`, `libazure_storage_client_la_SOURCES = azure-storage-client.cpp`, `libazure_storage_client_la_CXXFLAGS = $(LIBCURL_CFLAGS) $(OPENSSL_CFLAGS) -I$(top_srcdir)/include`, `libazure_storage_client_la_LIBADD = $(LIBCURL_LIBS) $(OPENSSL_LIBS)`, `libazure_storage_client_la_LDFLAGS = -version-info 0:0:0`. Add header install target: `azurestorageincludedir = $(includedir)/azure-storage-client` and `azurestorageinclude_HEADERS = azure-storage-client.hpp`. See research.md §2 for naming conventions.
-- [ ] T007 [US1] Verify build by running `autoreconf -fi && ./configure && make` from the repository root. Confirm libazure-storage-client.so exists in src/.libs/.
+- [X] T004 [P] [US1] Create public header src/azure-storage-client.hpp with the full AzureTableClient class declaration. Include guards, `#include <string>`, `#include <vector>`, `#include <functional>`, `#include <libazure-storage-client/json.hpp>`. Declare all 14 public methods from data-model.md (two constructors, SetBearerToken, CreateTableIfNotExists, GetEntity, UpsertEntity, BatchUpsertEntities, QueryEntities, DeleteEntity, and all five async variants). Declare private members without underscore suffix (account_name, account_key, table_endpoint, bearer_token). See data-model.md for full method signatures and types.
+- [X] T005 [P] [US1] Create stub implementation src/azure-storage-client.cpp. Include `"azure-storage-client.hpp"`. Implement all 14 methods as stubs: constructors are no-ops, SetBearerToken is no-op, bool methods return false, GetEntity returns `nlohmann::json{}`, QueryEntities returns empty vector, async methods invoke their callback with the default value. Use `this->` for all member access — see data-model.md for stub behavior per method.
+- [X] T006 [US1] Create src/Makefile.am with library build rules. Set `lib_LTLIBRARIES = libazure-storage-client.la`, `libazure_storage_client_la_SOURCES = azure-storage-client.cpp`, `libazure_storage_client_la_CXXFLAGS = $(LIBCURL_CFLAGS) $(OPENSSL_CFLAGS) -I$(top_srcdir)/include`, `libazure_storage_client_la_LIBADD = $(LIBCURL_LIBS) $(OPENSSL_LIBS)`, `libazure_storage_client_la_LDFLAGS = -version-info 0:0:0`. Add header install target: `azurestorageincludedir = $(includedir)/azure-storage-client` and `azurestorageinclude_HEADERS = azure-storage-client.hpp`. See research.md §2 for naming conventions.
+- [X] T007 [US1] Verify build by running `autoreconf -fi && ./configure && make` from the repository root. Confirm libazure-storage-client.so exists in src/.libs/.
 
 **Checkpoint**: User Story 1 complete — shared library builds from source.
 
@@ -61,8 +61,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T008 [US2] Create pkg-config template azure-storage-client.pc.in at repository root. Use `@prefix@`, `@exec_prefix@`, `@libdir@`, `@includedir@`, `@PACKAGE_VERSION@` substitution variables. Set `Name: azure-storage-client`, `Requires: libcurl openssl`, `Libs: -L${libdir} -lazure-storage-client`, `Cflags: -I${includedir}`. See research.md §3 for template pattern.
-- [ ] T009 [US2] Verify install by running `make install DESTDIR=/tmp/staging`. Check that `libazure-storage-client.so` exists under `<prefix>/lib/`, header exists under `<prefix>/include/azure-storage-client/`, and `azure-storage-client.pc` exists under `<prefix>/lib/pkgconfig/`. Run `PKG_CONFIG_PATH=/tmp/staging/usr/local/lib/pkgconfig pkg-config --cflags --libs azure-storage-client` and confirm correct flags.
+- [X] T008 [US2] Create pkg-config template azure-storage-client.pc.in at repository root. Use `@prefix@`, `@exec_prefix@`, `@libdir@`, `@includedir@`, `@PACKAGE_VERSION@` substitution variables. Set `Name: azure-storage-client`, `Requires: libcurl openssl`, `Libs: -L${libdir} -lazure-storage-client`, `Cflags: -I${includedir}`. See research.md §3 for template pattern.
+- [X] T009 [US2] Verify install by running `make install DESTDIR=/tmp/staging`. Check that `libazure-storage-client.so` exists under `<prefix>/lib/`, header exists under `<prefix>/include/azure-storage-client/`, and `azure-storage-client.pc` exists under `<prefix>/lib/pkgconfig/`. Run `PKG_CONFIG_PATH=/tmp/staging/usr/local/lib/pkgconfig pkg-config --cflags --libs azure-storage-client` and confirm correct flags.
 
 **Checkpoint**: User Stories 1 AND 2 complete — library builds, installs, and is discoverable via pkg-config.
 
@@ -76,7 +76,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T010 [US3] Verify MinGW cross-compilation by running `make distclean` (or from a clean build), then `./configure --host=x86_64-w64-mingw32 && make`. Confirm that `src/.libs/` contains a Windows DLL artifact (e.g., `libazure-storage-client-0.dll`). Requires `mingw-w64` package installed.
+- [X] T010 [US3] Verify MinGW cross-compilation by running `make distclean` (or from a clean build), then `./configure --host=x86_64-w64-mingw32 && make`. Confirm that `src/.libs/` contains a Windows DLL artifact (e.g., `libazure-storage-client-0.dll`). Requires `mingw-w64` package installed.
 
 **Checkpoint**: All three user stories complete — native build, install, and cross-compilation all work.
 
@@ -86,8 +86,8 @@
 
 **Purpose**: End-to-end validation across all stories.
 
-- [ ] T011 Run full quickstart.md validation end-to-end: execute every command sequence from quickstart.md (build, install to staging, pkg-config test, MinGW cross-compile) and confirm all succeed.
-- [ ] T012 Verify missing-dependency error messages: run `./configure` with `PKG_CONFIG_PATH` cleared or pointed at an empty directory to confirm that missing libcurl and OpenSSL produce clear, descriptive error messages from `PKG_CHECK_MODULES` (validates edge case EC-001 from spec.md).
+- [X] T011 Run full quickstart.md validation end-to-end: execute every command sequence from quickstart.md (build, install to staging, pkg-config test, MinGW cross-compile) and confirm all succeed.
+- [X] T012 Verify missing-dependency error messages: run `./configure` with `PKG_CONFIG_PATH` cleared or pointed at an empty directory to confirm that missing libcurl and OpenSSL produce clear, descriptive error messages from `PKG_CHECK_MODULES` (validates edge case EC-001 from spec.md).
 
 ---
 
