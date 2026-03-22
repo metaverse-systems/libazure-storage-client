@@ -58,7 +58,11 @@ std::string build_date_string()
 {
     std::time_t now = std::time(nullptr);
     std::tm gmt{};
+#ifdef _WIN32
+    gmtime_s(&gmt, &now);
+#else
     gmtime_r(&now, &gmt);
+#endif
 
     char buf[64];
     std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &gmt);
