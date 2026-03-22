@@ -17,7 +17,7 @@
 
 **Purpose**: Add required includes and prepare the source file for implementation
 
-- [ ] T001 Add `#include` directives for `<curl/curl.h>`, `<openssl/hmac.h>`, `<openssl/evp.h>`, `<openssl/buffer.h>`, `<ctime>`, `<cstring>`, and `<sstream>` to src/azure-storage-client.cpp, and open an anonymous namespace block for internal helpers
+- [x] T001 Add `#include` directives for `<curl/curl.h>`, `<openssl/hmac.h>`, `<openssl/evp.h>`, `<openssl/buffer.h>`, `<ctime>`, `<cstring>`, and `<sstream>` to src/azure-storage-client.cpp, and open an anonymous namespace block for internal helpers
 
 ---
 
@@ -27,11 +27,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T002 Implement `base64_decode()` helper that decodes a base64 string to a `std::vector<unsigned char>` using OpenSSL `EVP_DecodeBlock()` in src/azure-storage-client.cpp
-- [ ] T003 Implement `base64_encode()` helper that encodes raw bytes to a `std::string` using OpenSSL `EVP_EncodeBlock()` in src/azure-storage-client.cpp
-- [ ] T004 Implement `build_date_string()` helper that returns current UTC time in RFC 1123 format (`"%a, %d %b %Y %H:%M:%S GMT"`) using `std::gmtime()` and `std::strftime()` in src/azure-storage-client.cpp
-- [ ] T005 Implement `normalize_endpoint()` helper that strips a single trailing slash from a URL string, and update both constructors to call it on the `table_endpoint` argument before storing in src/azure-storage-client.cpp
-- [ ] T006 Implement `perform_request()` helper that takes HTTP method, URL, a `std::vector<std::string>` of headers, and an optional body string; uses `curl_easy_init()`, sets `CURLOPT_URL`, `CURLOPT_CUSTOMREQUEST`, `CURLOPT_HTTPHEADER` (via `curl_slist_append`), `CURLOPT_POSTFIELDS` (if body non-empty), captures response body via `CURLOPT_WRITEFUNCTION`, retrieves status via `CURLINFO_RESPONSE_CODE`, cleans up with `curl_easy_cleanup()` and `curl_slist_free_all()`; returns `long` HTTP status code (0 on network error) in src/azure-storage-client.cpp
+- [x] T002 Implement `base64_decode()` helper that decodes a base64 string to a `std::vector<unsigned char>` using OpenSSL `EVP_DecodeBlock()` in src/azure-storage-client.cpp
+- [x] T003 Implement `base64_encode()` helper that encodes raw bytes to a `std::string` using OpenSSL `EVP_EncodeBlock()` in src/azure-storage-client.cpp
+- [x] T004 Implement `build_date_string()` helper that returns current UTC time in RFC 1123 format (`"%a, %d %b %Y %H:%M:%S GMT"`) using `std::gmtime()` and `std::strftime()` in src/azure-storage-client.cpp
+- [x] T005 Implement `normalize_endpoint()` helper that strips a single trailing slash from a URL string, and update both constructors to call it on the `table_endpoint` argument before storing in src/azure-storage-client.cpp
+- [x] T006 Implement `perform_request()` helper that takes HTTP method, URL, a `std::vector<std::string>` of headers, and an optional body string; uses `curl_easy_init()`, sets `CURLOPT_URL`, `CURLOPT_CUSTOMREQUEST`, `CURLOPT_HTTPHEADER` (via `curl_slist_append`), `CURLOPT_POSTFIELDS` (if body non-empty), captures response body via `CURLOPT_WRITEFUNCTION`, retrieves status via `CURLINFO_RESPONSE_CODE`, cleans up with `curl_easy_cleanup()` and `curl_slist_free_all()`; returns `long` HTTP status code (0 on network error) in src/azure-storage-client.cpp
 
 **Checkpoint**: Foundation ready — helpers compiled and available for user story implementation
 
@@ -45,9 +45,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Implement `hmac_sha256_sign()` helper that base64-decodes the account key via `base64_decode()`, calls OpenSSL `HMAC(EVP_sha256(), ...)` with the decoded key and the StringToSign, and returns the base64-encoded signature via `base64_encode()` in src/azure-storage-client.cpp. Note: if `base64_decode()` fails on an invalid key, the resulting HMAC will be incorrect and the server will return 403, which maps to `false` via the error model — no explicit error handling needed.
-- [ ] T008 [US1] Implement `build_string_to_sign()` helper that constructs the Table Service Shared Key StringToSign: `VERB + "\n" + content_md5 + "\n" + content_type + "\n" + date + "\n" + "/" + account_name + "/" + resource_path` per research R-002 in src/azure-storage-client.cpp
-- [ ] T009 [US1] Implement `build_shared_key_auth_header()` helper that calls `build_string_to_sign()` and `hmac_sha256_sign()` and returns the complete header value `"SharedKey " + account_name + ":" + signature` in src/azure-storage-client.cpp
+- [x] T007 [US1] Implement `hmac_sha256_sign()` helper that base64-decodes the account key via `base64_decode()`, calls OpenSSL `HMAC(EVP_sha256(), ...)` with the decoded key and the StringToSign, and returns the base64-encoded signature via `base64_encode()` in src/azure-storage-client.cpp. Note: if `base64_decode()` fails on an invalid key, the resulting HMAC will be incorrect and the server will return 403, which maps to `false` via the error model — no explicit error handling needed.
+- [x] T008 [US1] Implement `build_string_to_sign()` helper that constructs the Table Service Shared Key StringToSign: `VERB + "\n" + content_md5 + "\n" + content_type + "\n" + date + "\n" + "/" + account_name + "/" + resource_path` per research R-002 in src/azure-storage-client.cpp
+- [x] T009 [US1] Implement `build_shared_key_auth_header()` helper that calls `build_string_to_sign()` and `hmac_sha256_sign()` and returns the complete header value `"SharedKey " + account_name + ":" + signature` in src/azure-storage-client.cpp
 
 **Checkpoint**: SharedKey signing pipeline complete — ready to be consumed by CreateTableIfNotExists
 
@@ -61,7 +61,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T010 [US2] Implement `CreateTableIfNotExists()` method body: build URL as `this->table_endpoint + "/Tables"`, build JSON body `{"TableName":"<table_name>"}` using nlohmann-json, generate `x-ms-date` via `build_date_string()`, construct headers list (`Content-Type: application/json`, `Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`), compute SharedKey `Authorization` header via `build_shared_key_auth_header()`, call `perform_request("POST", ...)`, return `true` for HTTP 201 or 409, `false` otherwise in src/azure-storage-client.cpp. Note: initially uses SharedKey auth only; bearer auth dispatch is added in T011.
+- [x] T010 [US2] Implement `CreateTableIfNotExists()` method body: build URL as `this->table_endpoint + "/Tables"`, build JSON body `{"TableName":"<table_name>"}` using nlohmann-json, generate `x-ms-date` via `build_date_string()`, construct headers list (`Content-Type: application/json`, `Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`), compute SharedKey `Authorization` header via `build_shared_key_auth_header()`, call `perform_request("POST", ...)`, return `true` for HTTP 201 or 409, `false` otherwise in src/azure-storage-client.cpp. Note: initially uses SharedKey auth only; bearer auth dispatch is added in T011.
 
 **Checkpoint**: SharedKey auth + CreateTable verified end-to-end against Azurite (SC-001, SC-002, SC-003, SC-004, SC-006)
 
@@ -75,7 +75,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T011 [US3] Refactor auth dispatch in `CreateTableIfNotExists()`: before computing SharedKey auth, check if `this->bearer_token` is non-empty — if so, add `Authorization: Bearer {bearer_token}` header instead of SharedKey header; SharedKey auth is used only when bearer_token is empty and account_name/account_key are non-empty in src/azure-storage-client.cpp
+- [x] T011 [US3] Refactor auth dispatch in `CreateTableIfNotExists()`: before computing SharedKey auth, check if `this->bearer_token` is non-empty — if so, add `Authorization: Bearer {bearer_token}` header instead of SharedKey header; SharedKey auth is used only when bearer_token is empty and account_name/account_key are non-empty in src/azure-storage-client.cpp
 
 **Checkpoint**: Both auth modes functional; bearer priority rule verified (SC-005)
 
@@ -85,10 +85,10 @@
 
 **Purpose**: Build verification and end-to-end validation
 
-- [ ] T012 Verify library compiles cleanly with `make` from repository root and fix any build errors in src/azure-storage-client.cpp
-- [ ] T013 Run quickstart.md validation: start Azurite, build a test program using SharedKey + CreateTableIfNotExists, confirm both calls return success per specs/002-auth-and-create-table/quickstart.md
-- [ ] T014 Verify failure path (SC-004): call `CreateTableIfNotExists` against a non-existent endpoint (e.g., `http://127.0.0.1:19999/fake`) and confirm it returns `false`
-- [ ] T015 Verify bearer auth (SC-005): construct a bearer-token client, enable `CURLOPT_VERBOSE` or inspect outgoing request to confirm it includes `Authorization: Bearer {token}` header; call `SetBearerToken("new-token")` and confirm the updated token appears in subsequent requests
+- [x] T012 Verify library compiles cleanly with `make` from repository root and fix any build errors in src/azure-storage-client.cpp
+- [x] T013 Run quickstart.md validation: start Azurite, build a test program using SharedKey + CreateTableIfNotExists, confirm both calls return success per specs/002-auth-and-create-table/quickstart.md
+- [x] T014 Verify failure path (SC-004): call `CreateTableIfNotExists` against a non-existent endpoint (e.g., `http://127.0.0.1:19999/fake`) and confirm it returns `false`
+- [x] T015 Verify bearer auth (SC-005): construct a bearer-token client, enable `CURLOPT_VERBOSE` or inspect outgoing request to confirm it includes `Authorization: Bearer {token}` header; call `SetBearerToken("new-token")` and confirm the updated token appears in subsequent requests
 
 ---
 
