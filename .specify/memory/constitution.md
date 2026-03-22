@@ -104,6 +104,9 @@ Linux (GCC/Clang) and Windows (MinGW cross-compilation).
 ## Technical Constraints
 
 - **Language**: C++20
+- **Naming**: class member variables MUST NOT use a trailing
+  underscore suffix. All member access MUST use `this->` to
+  disambiguate from parameters and local variables.
 - **Build system**: Autotools (`configure.ac`, `Makefile.am`,
   `src/Makefile.am`)
 - **Output**: `libazure-storage-client.so` (Linux),
