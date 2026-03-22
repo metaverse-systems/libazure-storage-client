@@ -69,7 +69,7 @@ As a library consumer, I construct an `AzureTableClient` with a table endpoint a
 
 - **FR-001**: The Shared Key constructor MUST store the account name, account key, and table endpoint for subsequent use.
 - **FR-002**: Every HTTP request sent by a Shared Key client MUST include an `Authorization: SharedKey {accountName}:{base64Signature}` header computed per the Azure Table Storage Shared Key specification.
-- **FR-003**: The Shared Key signing process MUST use the **Shared Key Lite** format. The StringToSign is: `VERB\nContent-MD5\nContent-Type\nDate\n/{account}/{resource-path}`. The `Date` field MUST be the value of the `x-ms-date` header. Canonicalized headers and query parameters are NOT included (those belong to the Full Shared Key format used by Blob/Queue, not Table Storage).
+- **FR-003**: The Shared Key signing process MUST use the **Table Service Shared Key** format. The StringToSign is: `VERB\nContent-MD5\nContent-Type\nDate\n/{account}/{resource-path}`. The `Date` field MUST be the value of the `x-ms-date` header (never empty for Table Service). Canonicalized headers and query parameters are NOT included (unlike Blob/Queue Shared Key).
 - **FR-004**: The Shared Key signing process MUST base64-decode the account key, use it as the HMAC-SHA256 key to sign the StringToSign, and base64-encode the resulting digest to produce the signature.
 - **FR-005**: Every HTTP request MUST include an `x-ms-date` header set to the current UTC time in RFC 1123 format and an `x-ms-version` header set to `2021-12-02`.
 - **FR-006**: The bearer token constructor MUST store the table endpoint and bearer token for subsequent use.
@@ -103,7 +103,7 @@ As a library consumer, I construct an `AzureTableClient` with a table endpoint a
 ### Session 2026-03-22
 
 - Q: What happens when `SetBearerToken()` is called on a Shared Key-constructed client? → A: Bearer token takes priority when non-empty; SharedKey is used as fallback when no bearer token is set.
-- Q: Which Shared Key StringToSign format — Lite or Full? → A: Shared Key Lite (`VERB\nContent-MD5\nContent-Type\nDate\n/{account}/{resource-path}`).
+- Q: Which Shared Key StringToSign format — Lite or Full? → A: Table Service Shared Key format (`VERB\nContent-MD5\nContent-Type\nDate\n/{account}/{resource-path}`). Note: this uses `Authorization: SharedKey` (per constitution), not the simpler `SharedKeyLite` scheme which has a different StringToSign.
 - Q: Which Azure Storage API version should the library target? → A: `2021-12-02` (well-supported by Azurite and production).
 - Q: Should the library handle Azurite path-based URLs vs. production host-based URLs differently? → A: No. The library uses the caller-provided endpoint as-is and appends resource paths directly. The caller is responsible for providing the correct base URL for their environment.
 
