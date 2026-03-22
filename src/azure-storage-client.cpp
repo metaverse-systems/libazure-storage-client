@@ -1,6 +1,7 @@
 #include <libazure-storage-client/azure-storage-client.hpp>
 
 #include <curl/curl.h>
+#include <thread>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
 #include <openssl/buffer.h>
@@ -586,28 +587,44 @@ void AzureTableClient::GetEntityAsync(const std::string &table_name,
                                       const std::string &row_key,
                                       std::function<void(nlohmann::json)> callback)
 {
-    callback({});
+    AzureTableClient client_copy = *this;
+    std::thread([client_copy, table_name, partition_key, row_key, callback]() mutable {
+        auto result = client_copy.GetEntity(table_name, partition_key, row_key);
+        if (callback) callback(result);
+    }).detach();
 }
 
 void AzureTableClient::UpsertEntityAsync(const std::string &table_name,
                                          const nlohmann::json &entity,
                                          std::function<void(bool)> callback)
 {
-    callback(false);
+    AzureTableClient client_copy = *this;
+    std::thread([client_copy, table_name, entity, callback]() mutable {
+        auto result = client_copy.UpsertEntity(table_name, entity);
+        if (callback) callback(result);
+    }).detach();
 }
 
 void AzureTableClient::BatchUpsertEntitiesAsync(const std::string &table_name,
                                                 const std::vector<nlohmann::json> &entities,
                                                 std::function<void(bool)> callback)
 {
-    callback(false);
+    AzureTableClient client_copy = *this;
+    std::thread([client_copy, table_name, entities, callback]() mutable {
+        auto result = client_copy.BatchUpsertEntities(table_name, entities);
+        if (callback) callback(result);
+    }).detach();
 }
 
 void AzureTableClient::QueryEntitiesAsync(const std::string &table_name,
                                           const std::string &filter,
                                           std::function<void(std::vector<nlohmann::json>)> callback)
 {
-    callback({});
+    AzureTableClient client_copy = *this;
+    std::thread([client_copy, table_name, filter, callback]() mutable {
+        auto result = client_copy.QueryEntities(table_name, filter);
+        if (callback) callback(result);
+    }).detach();
 }
 
 void AzureTableClient::DeleteEntityAsync(const std::string &table_name,
@@ -615,5 +632,9 @@ void AzureTableClient::DeleteEntityAsync(const std::string &table_name,
                                          const std::string &row_key,
                                          std::function<void(bool)> callback)
 {
-    callback(false);
+    AzureTableClient client_copy = *this;
+    std::thread([client_copy, table_name, partition_key, row_key, callback]() mutable {
+        auto result = client_copy.DeleteEntity(table_name, partition_key, row_key);
+        if (callback) callback(result);
+    }).detach();
 }

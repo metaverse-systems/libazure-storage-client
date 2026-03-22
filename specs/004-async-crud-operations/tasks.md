@@ -35,8 +35,8 @@ Tasks group the five spec user stories by priority into three implementation pha
 
 **Purpose**: Build system changes required for `std::thread` support
 
-- [ ] T001 Add `-pthread` to compiler and linker flags in src/Makefile.am
-- [ ] T002 Add `#include <thread>` to src/azure-storage-client.cpp
+- [X] T001 Add `-pthread` to compiler and linker flags in src/Makefile.am
+- [X] T002 Add `#include <thread>` to src/azure-storage-client.cpp
 
 **Checkpoint**: Library compiles with threading support. No behavioral changes yet.
 
@@ -60,8 +60,8 @@ Tasks group the five spec user stories by priority into three implementation pha
 
 ### Implementation for User Story 1
 
-- [ ] T003 [P] [US1] Implement GetEntityAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
-- [ ] T004 [P] [US1] Implement UpsertEntityAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
+- [X] T003 [P] [US1] Implement GetEntityAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
+- [X] T004 [P] [US1] Implement UpsertEntityAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
 
 Each implementation must:
 1. Copy `*this` into a local `AzureTableClient` variable
@@ -82,8 +82,8 @@ Each implementation must:
 
 ### Implementation for User Story 2
 
-- [ ] T005 [P] [US2] Implement DeleteEntityAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
-- [ ] T006 [P] [US2] Implement QueryEntitiesAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
+- [X] T005 [P] [US2] Implement DeleteEntityAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
+- [X] T006 [P] [US2] Implement QueryEntitiesAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
 
 Same implementation pattern as Phase 3 tasks. `QueryEntitiesAsync` delegates to `QueryEntities` which already handles continuation tokens.
 
@@ -99,7 +99,7 @@ Same implementation pattern as Phase 3 tasks. `QueryEntitiesAsync` delegates to 
 
 ### Implementation for User Story 3
 
-- [ ] T007 [US3] Implement BatchUpsertEntitiesAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
+- [X] T007 [US3] Implement BatchUpsertEntitiesAsync with copy-at-dispatch pattern in src/azure-storage-client.cpp
 
 Same implementation pattern. Delegates to `BatchUpsertEntities` which already handles the batch transaction protocol and the 100-entity limit validation.
 
@@ -111,8 +111,8 @@ Same implementation pattern. Delegates to `BatchUpsertEntities` which already ha
 
 **Purpose**: Build verification and validation across all async methods
 
-- [ ] T008 Run `make clean && make` to verify library compiles with all async implementations
-- [ ] T009 Run quickstart.md validation against Azurite to verify all five async methods end-to-end
+- [X] T008 Run `make clean && make` to verify library compiles with all async implementations
+- [X] T009 Run quickstart.md validation against Azurite to verify all five async methods end-to-end
 
 ---
 
