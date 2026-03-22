@@ -91,10 +91,10 @@ As a library consumer, I call `BatchUpsertEntities` with a table name and a vect
 ### Edge Cases
 
 - What happens when `GetEntity` is called with an empty partition key or row key? The library sends the request as-is and lets the service reject it; `GetEntity` returns an empty JSON object.
-- What happens when `UpsertEntity` is called with a JSON object missing PartitionKey or RowKey? The library sends the request as-is; the service rejects it and `UpsertEntity` returns `false`.
+- What happens when `UpsertEntity` is called with a JSON object missing PartitionKey or RowKey? The library returns `false` immediately without sending a network request. This avoids triggering an exception from the JSON key extraction and prevents a wasted HTTP round-trip.
 - What happens when `QueryEntities` returns more results than a single page (Azure returns a continuation token)? The library follows all continuation tokens and returns all matching results in a single combined vector. No library-level cap is imposed; the caller controls result size via OData `$filter` and `$top` parameters.
 - What happens when `BatchUpsertEntities` is called with entities spanning multiple PartitionKeys? Azure Table Storage requires all entities in a batch to share the same PartitionKey. The library sends the batch as-is; the service rejects it and the library returns `false`.
-- What happens when `BatchUpsertEntities` is called with more than 100 entities? Azure Table Storage limits batch transactions to 100 operations. The library sends the batch as-is; the service rejects it and the library returns `false`.
+- What happens when `BatchUpsertEntities` is called with more than 100 entities? The library rejects the request client-side and returns `false` immediately without sending a network request, enforcing the Azure Table Storage 100-operation batch limit per Constitution Principle II.
 - What happens when `DeleteEntity` targets an entity with a specific ETag? The library uses a wildcard ETag (`*`) to unconditionally delete regardless of concurrent modifications.
 - What happens when special characters appear in PartitionKey or RowKey values? The library URL-encodes key values in request URLs to handle characters like `/`, `'`, and `%`.
 - What happens when Azure Table Storage returns HTTP 429 (throttling) or 503 (service unavailable)? The library does NOT retry. It returns the failure value immediately (`false` or empty result). The caller is responsible for implementing retry logic.
@@ -108,6 +108,7 @@ As a library consumer, I call `BatchUpsertEntities` with a table name and a vect
 - **FR-003**: `GetEntity` MUST URL-encode the PartitionKey and RowKey values in the request URL to handle special characters (single quotes escaped as `''` per OData conventions).
 - **FR-004**: `UpsertEntity` MUST send an HTTP PUT (merge or replace) to `{endpoint}/{tableName}(PartitionKey='{partitionKey}',RowKey='{rowKey}')` with the entity JSON as the request body.
 - **FR-005**: `UpsertEntity` MUST extract PartitionKey and RowKey from the provided JSON entity to construct the request URL.
+- **FR-005b**: If the provided JSON entity does not contain `"PartitionKey"` or `"RowKey"` as string fields, `UpsertEntity` MUST return `false` immediately without sending a network request.
 - **FR-006**: `UpsertEntity` MUST return `true` when the service responds with HTTP 204 (No Content) and `false` for any other status or error.
 - **FR-007**: `DeleteEntity` MUST send an HTTP DELETE to `{endpoint}/{tableName}(PartitionKey='{partitionKey}',RowKey='{rowKey}')` with an `If-Match: *` header to unconditionally delete regardless of ETag.
 - **FR-008**: `DeleteEntity` MUST return `true` when the service responds with HTTP 204 (No Content) and `false` for any other status or error.
@@ -118,15 +119,16 @@ As a library consumer, I call `BatchUpsertEntities` with a table name and a vect
 - **FR-013**: `BatchUpsertEntities` MUST send a batch transaction request conforming to the Azure Table Storage batch format to upsert all provided entities atomically.
 - **FR-014**: `BatchUpsertEntities` MUST return `true` when the batch transaction succeeds (HTTP 202) and `false` for any error or partial failure.
 - **FR-015**: `BatchUpsertEntities` MUST return `true` (no-op) when called with an empty entity vector.
+- **FR-015b**: `BatchUpsertEntities` MUST return `false` immediately without sending a network request when `entities.size() > 100`, enforcing the Azure Table Storage batch limit client-side.
 - **FR-016**: All synchronous operations MUST include the same authentication headers (Shared Key or Bearer Token) and standard headers (`x-ms-date`, `x-ms-version`, `Accept`) as established by the existing `CreateTableIfNotExists` implementation.
 - **FR-017**: All synchronous operations MUST use `application/json;odata=nometadata` as the Accept header value.
-- **FR-018**: `UpsertEntity` and `BatchUpsertEntities` MUST set the `Content-Type` header to `application/json;odata=nometadata` for request bodies.
+- **FR-018**: `UpsertEntity` MUST set the `Content-Type` header to `application/json;odata=nometadata`. `BatchUpsertEntities` MUST set the outer request `Content-Type` to `multipart/mixed; boundary=batch_{id}` and each inner changeset operation's `Content-Type` to `application/json`.
 
 ### Key Entities
 
 - **AzureTableClient**: The primary public type. Already holds authentication credentials and table endpoint. The synchronous CRUD methods are declared but currently return stub values.
 - **Entity**: A JSON object representing a row in Azure Table Storage. Every entity contains a PartitionKey (string) and RowKey (string) which together form the entity's unique identifier. Additional properties are arbitrary key-value pairs.
-- **Batch Transaction**: A group of up to 100 entity operations submitted atomically. All entities in a single batch must share the same PartitionKey.
+- **Entity Group Transaction (batch)**: A group of up to 100 entity operations submitted atomically via the Azure Table Storage Entity Group Transaction format. All entities in a single batch must share the same PartitionKey.
 
 ## Success Criteria *(mandatory)*
 
