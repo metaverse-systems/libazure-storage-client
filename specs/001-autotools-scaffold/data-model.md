@@ -14,7 +14,7 @@ spec → data-model → tasks.
 
 ## AzureTableClient (public header declaration)
 
-The public header `src/azure-storage-client.h` declares the full
+The public header `src/azure-storage-client.hpp` declares the full
 class interface. All methods are stubs in the `.cpp` file — they
 compile and link but perform no operations.
 
@@ -28,9 +28,9 @@ compile and link but perform no operations.
 | `bearer_token` | `std::string` | Bearer ctor / `SetBearerToken` | OAuth2 bearer token |
 
 These fields are listed for header design only. They will be
-implemented in a later feature. The scaffold header may declare them
-or omit private members entirely — the public contract is what
-matters.
+implemented in a later feature. The scaffold header MUST declare
+these private members so that stub constructor/method bodies can
+use `this->` to assign or reference them.
 
 **Convention**: No underscore suffix on member names. Always use
 `this->` to disambiguate members from parameters/locals.

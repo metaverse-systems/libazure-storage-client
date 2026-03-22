@@ -30,6 +30,7 @@ Create the foundational build infrastructure for libazure-storage-client: a mini
 | III | Dual Authentication | N/A | Scaffold only — no auth code yet |
 | IV | Minimal Surface Area | PASS | Header declares only the specified API contract; stub bodies do nothing extra |
 | V | Cross-Platform Portability | PASS | Autotools with `--host` cross-compilation; C++20; `.so`/`.dll` output; pkg-config `.pc` |
+| TC | Naming Convention | PASS | No trailing underscore on members; `this->` for member access (constitution Technical Constraints) |
 
 **Gate result**: PASS — no violations. Proceed to Phase 0.
 
@@ -65,7 +66,9 @@ m4/                                  # Autotools macro directory
 └── ax_cxx_compile_stdcxx.m4         # AX_CXX_COMPILE_STDCXX macro for C++20 check
 ```
 
-**Structure Decision**: Flat `src/` directory — a single `.cpp` and `.h` file. No subdirectories needed for a scaffold. The `include/` directory is pre-existing and holds the bundled nlohmann-json header. The `m4/` directory holds the standard Autoconf Archive macro for C++20 detection.
+**Structure Decision**: Flat `src/` directory — a single `.cpp` and `.h` file. No subdirectories needed for a scaffold. The `include/` directory is pre-existing and holds the bundled nlohmann-json header at `include/libazure-storage-client/json.hpp`. The public header uses `#include <libazure-storage-client/json.hpp>` which resolves via `-I$(top_srcdir)/include`. The `m4/` directory holds the standard Autoconf Archive macro for C++20 detection.
+
+**Library versioning**: Initial libtool `-version-info` is `0:0:0` (current:revision:age). This is appropriate for a scaffold with no stable ABI. Bump per libtool versioning rules when the public API changes in future features.
 
 ## Complexity Tracking
 
