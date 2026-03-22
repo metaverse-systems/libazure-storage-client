@@ -43,3 +43,8 @@ Thumbs.db
 
 # Environment
 .env*
+
+# Test artifacts
+tests/test_azure_table_client
+*.log
+*.trs

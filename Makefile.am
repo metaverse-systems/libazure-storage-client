@@ -1,5 +1,8 @@
 ACLOCAL_AMFLAGS = -I m4
 SUBDIRS = src
+if HAVE_CATCH2
+SUBDIRS += tests
+endif
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = azure-storage-client.pc
 

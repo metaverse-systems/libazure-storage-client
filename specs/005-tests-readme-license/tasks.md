@@ -19,8 +19,8 @@
 
 **Purpose**: Extend the Autotools build system to support Catch2 tests
 
-- [ ] T001 Add PKG_CHECK_MODULES for catch2-with-main, AM_CONDITIONAL, and tests/Makefile to AC_CONFIG_FILES in configure.ac
-- [ ] T002 Add conditional SUBDIRS entry for tests/ in Makefile.am
+- [X] T001 Add PKG_CHECK_MODULES for catch2-with-main, AM_CONDITIONAL, and tests/Makefile to AC_CONFIG_FILES in configure.ac
+- [X] T002 Add conditional SUBDIRS entry for tests/ in Makefile.am
 
 ---
 
@@ -30,8 +30,8 @@
 
 **⚠️ CRITICAL**: No test case tasks can begin until this phase is complete
 
-- [ ] T003 Create tests/Makefile.am with check_PROGRAMS, CXXFLAGS, LDADD, and LDFLAGS for test_azure_table_client
-- [ ] T004 Create tests/test_azure_table_client.cpp with Catch2 includes, Azurite connection constants, and shared table fixture (CreateTableIfNotExists in a Catch2 event listener)
+- [X] T003 Create tests/Makefile.am with check_PROGRAMS, CXXFLAGS, LDADD, and LDFLAGS for test_azure_table_client
+- [X] T004 Create tests/test_azure_table_client.cpp with Catch2 includes, Azurite connection constants, and shared table fixture (CreateTableIfNotExists in a Catch2 event listener)
 
 **Checkpoint**: `autoreconf -fi && ./configure && make check` compiles the test executable and the fixture creates the shared table against Azurite
 
@@ -45,36 +45,36 @@
 
 ### Sync CRUD Tests
 
-- [ ] T005 [P] [US1] Add TEST_CASE for CreateTableIfNotExists (idempotent — second call returns true) with tag [sync] in tests/test_azure_table_client.cpp
-- [ ] T006 [P] [US1] Add TEST_CASE for UpsertEntity and GetEntity (insert entity, retrieve, verify properties match) with tag [sync] in tests/test_azure_table_client.cpp
-- [ ] T007 [P] [US1] Add TEST_CASE for DeleteEntity (upsert entity, delete, verify GetEntity returns empty JSON) with tag [sync] in tests/test_azure_table_client.cpp
-- [ ] T008 [P] [US1] Add TEST_CASE for QueryEntities (upsert multiple entities with different PartitionKeys, query with filter, verify matching entities returned and non-matching excluded) with tag [sync] in tests/test_azure_table_client.cpp
-- [ ] T009 [P] [US1] Add TEST_CASE for BatchUpsertEntities (batch of 3 entities, verify all retrievable via GetEntity) with tag [sync] in tests/test_azure_table_client.cpp
+- [X] T005 [P] [US1] Add TEST_CASE for CreateTableIfNotExists (idempotent — second call returns true) with tag [sync] in tests/test_azure_table_client.cpp
+- [X] T006 [P] [US1] Add TEST_CASE for UpsertEntity and GetEntity (insert entity, retrieve, verify properties match) with tag [sync] in tests/test_azure_table_client.cpp
+- [X] T007 [P] [US1] Add TEST_CASE for DeleteEntity (upsert entity, delete, verify GetEntity returns empty JSON) with tag [sync] in tests/test_azure_table_client.cpp
+- [X] T008 [P] [US1] Add TEST_CASE for QueryEntities (upsert multiple entities with different PartitionKeys, query with filter, verify matching entities returned and non-matching excluded) with tag [sync] in tests/test_azure_table_client.cpp
+- [X] T009 [P] [US1] Add TEST_CASE for BatchUpsertEntities (batch of 3 entities, verify all retrievable via GetEntity) with tag [sync] in tests/test_azure_table_client.cpp
 
 ### Async CRUD Tests
 
-- [ ] T010 [P] [US1] Add TEST_CASE for GetEntityAsync (upsert entity first, call async get with callback capturing result into promise/future, verify properties match) with tag [async] in tests/test_azure_table_client.cpp
-- [ ] T011 [P] [US1] Add TEST_CASE for UpsertEntityAsync (call async upsert with callback capturing bool, verify true returned and entity retrievable via sync GetEntity) with tag [async] in tests/test_azure_table_client.cpp
-- [ ] T012 [P] [US1] Add TEST_CASE for DeleteEntityAsync (upsert entity first, call async delete with callback, verify true returned and GetEntity returns empty) with tag [async] in tests/test_azure_table_client.cpp
-- [ ] T013 [P] [US1] Add TEST_CASE for QueryEntitiesAsync (upsert entities, call async query with callback capturing vector, verify correct entities returned) with tag [async] in tests/test_azure_table_client.cpp
-- [ ] T014 [P] [US1] Add TEST_CASE for BatchUpsertEntitiesAsync (call async batch upsert with callback capturing bool, verify true returned and all entities retrievable) with tag [async] in tests/test_azure_table_client.cpp
+- [X] T010 [P] [US1] Add TEST_CASE for GetEntityAsync (upsert entity first, call async get with callback capturing result into promise/future, verify properties match) with tag [async] in tests/test_azure_table_client.cpp
+- [X] T011 [P] [US1] Add TEST_CASE for UpsertEntityAsync (call async upsert with callback capturing bool, verify true returned and entity retrievable via sync GetEntity) with tag [async] in tests/test_azure_table_client.cpp
+- [X] T012 [P] [US1] Add TEST_CASE for DeleteEntityAsync (upsert entity first, call async delete with callback, verify true returned and GetEntity returns empty) with tag [async] in tests/test_azure_table_client.cpp
+- [X] T013 [P] [US1] Add TEST_CASE for QueryEntitiesAsync (upsert entities, call async query with callback capturing vector, verify correct entities returned) with tag [async] in tests/test_azure_table_client.cpp
+- [X] T014 [P] [US1] Add TEST_CASE for BatchUpsertEntitiesAsync (call async batch upsert with callback capturing bool, verify true returned and all entities retrievable) with tag [async] in tests/test_azure_table_client.cpp
 
 ### Edge Case Tests
 
-- [ ] T015 [P] [US1] Add TEST_CASE for UpsertEntity with missing PartitionKey (verify returns false without network call) with tag [edge] in tests/test_azure_table_client.cpp
-- [ ] T016 [P] [US1] Add TEST_CASE for UpsertEntity with missing RowKey (verify returns false without network call) with tag [edge] in tests/test_azure_table_client.cpp
-- [ ] T017 [P] [US1] Add TEST_CASE for BatchUpsertEntities with >100 entities (verify returns false without network call) with tag [edge] in tests/test_azure_table_client.cpp
-- [ ] T018 [P] [US1] Add TEST_CASE for GetEntity with non-existent entity (verify returns empty JSON object) with tag [edge] in tests/test_azure_table_client.cpp
-- [ ] T019 [P] [US1] Add TEST_CASE for QueryEntities with filter matching no entities (verify returns empty vector) with tag [edge] in tests/test_azure_table_client.cpp
-- [ ] T020 [P] [US1] Add TEST_CASE for UpsertEntity with empty entity `{}` (verify returns false without network call) with tag [edge] in tests/test_azure_table_client.cpp
+- [X] T015 [P] [US1] Add TEST_CASE for UpsertEntity with missing PartitionKey (verify returns false without network call) with tag [edge] in tests/test_azure_table_client.cpp
+- [X] T016 [P] [US1] Add TEST_CASE for UpsertEntity with missing RowKey (verify returns false without network call) with tag [edge] in tests/test_azure_table_client.cpp
+- [X] T017 [P] [US1] Add TEST_CASE for BatchUpsertEntities with >100 entities (verify returns false without network call) with tag [edge] in tests/test_azure_table_client.cpp
+- [X] T018 [P] [US1] Add TEST_CASE for GetEntity with non-existent entity (verify returns empty JSON object) with tag [edge] in tests/test_azure_table_client.cpp
+- [X] T019 [P] [US1] Add TEST_CASE for QueryEntities with filter matching no entities (verify returns empty vector) with tag [edge] in tests/test_azure_table_client.cpp
+- [X] T020 [P] [US1] Add TEST_CASE for UpsertEntity with empty entity `{}` (verify returns false without network call) with tag [edge] in tests/test_azure_table_client.cpp
 
 ### Auth Dispatch Tests
 
-- [ ] T021 [P] [US1] Add TEST_CASE for Bearer Token constructor and SetBearerToken() — construct a BearerToken client, call SetBearerToken() with a new token, then attempt CreateTableIfNotExists against Azurite (expected: request sent with Authorization: Bearer header; Azurite rejects with 401/403 — assert the call returns false but does not crash) with tag [auth] in tests/test_azure_table_client.cpp
+- [X] T021 [P] [US1] Add TEST_CASE for Bearer Token constructor and SetBearerToken() — construct a BearerToken client, call SetBearerToken() with a new token, then attempt CreateTableIfNotExists against Azurite (expected: request sent with Authorization: Bearer header; Azurite rejects with 401/403 — assert the call returns false but does not crash) with tag [auth] in tests/test_azure_table_client.cpp
 
 ### Pagination Test
 
-- [ ] T022 [P] [US1] Add TEST_CASE for QueryEntities pagination — upsert >1000 entities with the same PartitionKey, call QueryEntities with no filter, verify all entities are returned (exercises continuation token handling per Constitution Principle II) with tag [sync] in tests/test_azure_table_client.cpp
+- [X] T022 [P] [US1] Add TEST_CASE for QueryEntities pagination — upsert >1000 entities with the same PartitionKey, call QueryEntities with no filter, verify all entities are returned (exercises continuation token handling per Constitution Principle II) with tag [sync] in tests/test_azure_table_client.cpp
 
 **Checkpoint**: `make check` passes all sync, async, auth, and edge-case tests. Run `./tests/test_azure_table_client "[sync]"`, `"[async]"`, `"[auth]"`, and `"[edge]"` individually to confirm tags work.
 
@@ -86,7 +86,7 @@
 
 **Independent Test**: Read README.md and follow instructions to build, install, and run tests from a clean clone
 
-- [ ] T023 [US2] Create README.md in repository root with project description, prerequisites section, build instructions (autoreconf -fi, ./configure, make, make install), testing section (Catch2 install, Azurite start, make check), usage code example (SharedKey client construction, CreateTableIfNotExists, UpsertEntity, GetEntity), pkg-config integration (pkg-config --cflags --libs azure-storage-client), and license reference
+- [X] T023 [US2] Create README.md in repository root with project description, prerequisites section, build instructions (autoreconf -fi, ./configure, make, make install), testing section (Catch2 install, Azurite start, make check), usage code example (SharedKey client construction, CreateTableIfNotExists, UpsertEntity, GetEntity), pkg-config integration (pkg-config --cflags --libs azure-storage-client), and license reference
 
 **Checkpoint**: README.md exists, contains all 6 required sections, and is readable by someone with no prior knowledge of the project
 
@@ -98,7 +98,7 @@
 
 **Independent Test**: Open LICENSE file, confirm MIT text with "2026 Metaverse Systems" copyright
 
-- [ ] T024 [P] [US3] Create LICENSE file in repository root with full MIT license text, copyright line "Copyright (c) 2026 Metaverse Systems"
+- [X] T024 [P] [US3] Create LICENSE file in repository root with full MIT license text, copyright line "Copyright (c) 2026 Metaverse Systems"
 
 **Checkpoint**: LICENSE file exists and would be detected as MIT by GitHub's license detection
 
@@ -108,8 +108,8 @@
 
 **Purpose**: Final validation across all user stories
 
-- [ ] T025 Run autoreconf -fi, ./configure, make, make check end-to-end against Azurite and verify all tests pass. Measure with `time make check` and confirm wall-clock time < 30 seconds (SC-003)
-- [ ] T026 Run quickstart.md verification checklist to confirm all items pass. After push, verify GitHub detects LICENSE as MIT (SC-005)
+- [X] T025 Run autoreconf -fi, ./configure, make, make check end-to-end against Azurite and verify all tests pass. Measure with `time make check` and confirm wall-clock time < 30 seconds (SC-003)
+- [X] T026 Run quickstart.md verification checklist to confirm all items pass. After push, verify GitHub detects LICENSE as MIT (SC-005)
 
 ---
 
