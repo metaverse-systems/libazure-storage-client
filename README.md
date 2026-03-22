@@ -95,6 +95,34 @@ int main() {
     auto result = client.GetEntity("MyTable", "Users", "user1");
     std::cout << result["Name"].get<std::string>() << std::endl;
 
+    // Async upsert — runs in a background thread, invokes callback on completion
+    nlohmann::json entity2;
+    entity2["PartitionKey"] = "Users";
+    entity2["RowKey"] = "user2";
+    entity2["Name"] = "Bob";
+    client.UpsertEntityAsync("MyTable", entity2, [](bool ok) {
+        std::cout << "Async upsert: " << (ok ? "success" : "failed") << std::endl;
+    });
+
+    // Async get — retrieves entity in a background thread
+    client.GetEntityAsync("MyTable", "Users", "user2",
+        [](nlohmann::json result) {
+            if (!result.empty())
+                std::cout << result["Name"].get<std::string>() << std::endl;
+        });
+
+    // Async query — filters entities in the background
+    client.QueryEntitiesAsync("MyTable", "PartitionKey eq 'Users'",
+        [](std::vector<nlohmann::json> results) {
+            std::cout << "Found " << results.size() << " entities" << std::endl;
+        });
+
+    // Async delete
+    client.DeleteEntityAsync("MyTable", "Users", "user2",
+        [](bool ok) {
+            std::cout << "Async delete: " << (ok ? "success" : "failed") << std::endl;
+        });
+
     return 0;
 }
 ```
