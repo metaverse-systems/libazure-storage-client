@@ -29,11 +29,11 @@ No setup tasks needed — project structure, build system, header declarations, 
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T001 Add `HttpResponse` struct (`long status`, `std::string body`, `std::map<std::string, std::string> headers`) and `header_callback` static function (parses `Name: value\r\n` lines into map with lowercase keys) to anonymous namespace in src/azure-storage-client.cpp
-- [ ] T002 Refactor `perform_request` to return `HttpResponse` instead of `long` — set `CURLOPT_HEADERFUNCTION` to `header_callback`, set `CURLOPT_HEADERDATA` to `&response.headers`, populate `response.body` via existing `write_callback`, populate `response.status` via `CURLINFO_RESPONSE_CODE` in src/azure-storage-client.cpp
-- [ ] T003 Update `CreateTableIfNotExists` to use `response.status` from returned `HttpResponse` (replace `long status = perform_request(...)` with `auto response = perform_request(...)` and use `response.status`) in src/azure-storage-client.cpp
-- [ ] T004 [P] Add `escape_odata_key` helper to anonymous namespace — double single quotes (`'` → `''`) then URL-encode via `curl_easy_escape(nullptr, ...)` (nullptr valid since libcurl 7.82.0) in src/azure-storage-client.cpp
-- [ ] T005 Add `build_entity_url` helper to anonymous namespace — constructs `{endpoint}/{tableName}(PartitionKey='{escapedPK}',RowKey='{escapedRK}')` using `escape_odata_key` in src/azure-storage-client.cpp
+- [X] T001 Add `HttpResponse` struct (`long status`, `std::string body`, `std::map<std::string, std::string> headers`) and `header_callback` static function (parses `Name: value\r\n` lines into map with lowercase keys) to anonymous namespace in src/azure-storage-client.cpp
+- [X] T002 Refactor `perform_request` to return `HttpResponse` instead of `long` — set `CURLOPT_HEADERFUNCTION` to `header_callback`, set `CURLOPT_HEADERDATA` to `&response.headers`, populate `response.body` via existing `write_callback`, populate `response.status` via `CURLINFO_RESPONSE_CODE` in src/azure-storage-client.cpp
+- [X] T003 Update `CreateTableIfNotExists` to use `response.status` from returned `HttpResponse` (replace `long status = perform_request(...)` with `auto response = perform_request(...)` and use `response.status`) in src/azure-storage-client.cpp
+- [X] T004 [P] Add `escape_odata_key` helper to anonymous namespace — double single quotes (`'` → `''`) then URL-encode via `curl_easy_escape(nullptr, ...)` (nullptr valid since libcurl 7.82.0) in src/azure-storage-client.cpp
+- [X] T005 Add `build_entity_url` helper to anonymous namespace — constructs `{endpoint}/{tableName}(PartitionKey='{escapedPK}',RowKey='{escapedRK}')` using `escape_odata_key` in src/azure-storage-client.cpp
 
 **Checkpoint**: Foundation ready — `perform_request` returns full response data, entity URL helpers available. User story implementation can now begin.
 
@@ -47,7 +47,7 @@ No setup tasks needed — project structure, build system, header declarations, 
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Implement `GetEntity` — build entity URL via `build_entity_url`, add headers (`Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`, auth via bearer or SharedKey using same dispatch pattern as `CreateTableIfNotExists`), call `perform_request` with GET method, parse `response.body` as `nlohmann::json` on HTTP 200, return empty JSON object on any other status in src/azure-storage-client.cpp
+- [X] T006 [US1] Implement `GetEntity` — build entity URL via `build_entity_url`, add headers (`Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`, auth via bearer or SharedKey using same dispatch pattern as `CreateTableIfNotExists`), call `perform_request` with GET method, parse `response.body` as `nlohmann::json` on HTTP 200, return empty JSON object on any other status in src/azure-storage-client.cpp
 
 **Checkpoint**: `GetEntity` is functional. Can retrieve any entity by key from Azure Table Storage.
 
@@ -61,7 +61,7 @@ No setup tasks needed — project structure, build system, header declarations, 
 
 ### Implementation for User Story 2
 
-- [ ] T007 [US2] Implement `UpsertEntity` — check that entity contains `"PartitionKey"` and `"RowKey"` as strings (return `false` if missing); extract values, build entity URL via `build_entity_url`, add headers (`Content-Type: application/json;odata=nometadata`, `Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`, auth dispatch), call `perform_request` with PUT method and `entity.dump()` as body, return `true` on HTTP 204, `false` otherwise in src/azure-storage-client.cpp
+- [X] T007 [US2] Implement `UpsertEntity` — check that entity contains `"PartitionKey"` and `"RowKey"` as strings (return `false` if missing); extract values, build entity URL via `build_entity_url`, add headers (`Content-Type: application/json;odata=nometadata`, `Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`, auth dispatch), call `perform_request` with PUT method and `entity.dump()` as body, return `true` on HTTP 204, `false` otherwise in src/azure-storage-client.cpp
 
 **Checkpoint**: `UpsertEntity` is functional. Can create and replace entities. Combined with US1, basic read/write cycle works.
 
@@ -75,7 +75,7 @@ No setup tasks needed — project structure, build system, header declarations, 
 
 ### Implementation for User Story 3
 
-- [ ] T008 [US3] Implement `DeleteEntity` — build entity URL via `build_entity_url`, add headers (`If-Match: *`, `Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`, auth dispatch), call `perform_request` with DELETE method and empty body, return `true` on HTTP 204, `false` otherwise in src/azure-storage-client.cpp
+- [X] T008 [US3] Implement `DeleteEntity` — build entity URL via `build_entity_url`, add headers (`If-Match: *`, `Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`, auth dispatch), call `perform_request` with DELETE method and empty body, return `true` on HTTP 204, `false` otherwise in src/azure-storage-client.cpp
 
 **Checkpoint**: `DeleteEntity` is functional. Full CRUD lifecycle (create, read, delete) is complete.
 
@@ -89,7 +89,7 @@ No setup tasks needed — project structure, build system, header declarations, 
 
 ### Implementation for User Story 4
 
-- [ ] T009 [US4] Implement `QueryEntities` — build base query URL as `{endpoint}/{tableName}()`, append `?$filter={curl_easy_escape(filter)}` if filter is non-empty, add headers (`Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`, auth dispatch), call `perform_request` with GET in a loop (rebuilding `x-ms-date` and `Authorization` headers for each iteration since SharedKey signatures are time-dependent): parse `response.body` JSON and extract `"value"` array into results vector, check `response.headers` for `x-ms-continuation-nextpartitionkey` and `x-ms-continuation-nextrowkey` (lowercase), if present append `NextPartitionKey` and `NextRowKey` query parameters to next request URL and repeat, otherwise break; return empty vector on any error in src/azure-storage-client.cpp
+- [X] T009 [US4] Implement `QueryEntities` — build base query URL as `{endpoint}/{tableName}()`, append `?$filter={curl_easy_escape(filter)}` if filter is non-empty, add headers (`Accept: application/json;odata=nometadata`, `x-ms-date`, `x-ms-version: 2021-12-02`, auth dispatch), call `perform_request` with GET in a loop (rebuilding `x-ms-date` and `Authorization` headers for each iteration since SharedKey signatures are time-dependent): parse `response.body` JSON and extract `"value"` array into results vector, check `response.headers` for `x-ms-continuation-nextpartitionkey` and `x-ms-continuation-nextrowkey` (lowercase), if present append `NextPartitionKey` and `NextRowKey` query parameters to next request URL and repeat, otherwise break; return empty vector on any error in src/azure-storage-client.cpp
 
 **Checkpoint**: `QueryEntities` is functional with full pagination support. All single-entity and multi-entity read operations work.
 
@@ -103,7 +103,7 @@ No setup tasks needed — project structure, build system, header declarations, 
 
 ### Implementation for User Story 5
 
-- [ ] T010 [US5] Implement `BatchUpsertEntities` — return `true` immediately if entities vector is empty (no-op); return `false` immediately if `entities.size() > 100` (client-side guard per constitution); build multipart/mixed batch body with outer `batch_asc` boundary and inner `changeset_asc` boundary, each changeset entry is a PUT request line (`PUT {entity_url} HTTP/1.1`) with `Content-Type: application/json` and `Accept: application/json;odata=nometadata` headers followed by entity JSON body; POST to `{endpoint}/$batch` with `Content-Type: multipart/mixed; boundary=batch_asc` header plus standard headers (`x-ms-date`, `x-ms-version: 2021-12-02`, auth dispatch); return `true` if HTTP status is 202 and response body does not contain `HTTP/1.1 4` or `HTTP/1.1 5` error lines, `false` otherwise in src/azure-storage-client.cpp
+- [X] T010 [US5] Implement `BatchUpsertEntities` — return `true` immediately if entities vector is empty (no-op); return `false` immediately if `entities.size() > 100` (client-side guard per constitution); build multipart/mixed batch body with outer `batch_asc` boundary and inner `changeset_asc` boundary, each changeset entry is a PUT request line (`PUT {entity_url} HTTP/1.1`) with `Content-Type: application/json` and `Accept: application/json;odata=nometadata` headers followed by entity JSON body; POST to `{endpoint}/$batch` with `Content-Type: multipart/mixed; boundary=batch_asc` header plus standard headers (`x-ms-date`, `x-ms-version: 2021-12-02`, auth dispatch); return `true` if HTTP status is 202 and response body does not contain `HTTP/1.1 4` or `HTTP/1.1 5` error lines, `false` otherwise in src/azure-storage-client.cpp
 
 **Checkpoint**: All five synchronous CRUD operations are implemented and functional.
 
@@ -113,8 +113,8 @@ No setup tasks needed — project structure, build system, header declarations, 
 
 **Purpose**: Validate the complete implementation builds and works end-to-end
 
-- [ ] T011 Build project with `make` and verify zero compilation errors or warnings
-- [ ] T012 Run quickstart.md end-to-end validation against Azurite — execute each operation (CreateTableIfNotExists, UpsertEntity, GetEntity, QueryEntities, DeleteEntity, BatchUpsertEntities) and confirm expected output. Also verify at least one error case per method: `GetEntity` on non-existent table returns `{}`, `DeleteEntity` on missing entity returns `false`, `UpsertEntity` with missing PartitionKey returns `false`, `BatchUpsertEntities` with >100 entities returns `false`
+- [X] T011 Build project with `make` and verify zero compilation errors or warnings
+- [X] T012 Run quickstart.md end-to-end validation against Azurite — execute each operation (CreateTableIfNotExists, UpsertEntity, GetEntity, QueryEntities, DeleteEntity, BatchUpsertEntities) and confirm expected output. Also verify at least one error case per method: `GetEntity` on non-existent table returns `{}`, `DeleteEntity` on missing entity returns `false`, `UpsertEntity` with missing PartitionKey returns `false`, `BatchUpsertEntities` with >100 entities returns `false`
 
 ---
 
