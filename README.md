@@ -133,6 +133,52 @@ Compile with:
 g++ -std=c++20 example.cpp $(pkg-config --cflags --libs azure-storage-client) -o example
 ```
 
+## Checked queries
+
+`QueryEntities` and `QueryEntitiesAsync` return an empty vector on failure, so a
+caller cannot tell a failed query from a table with no matching rows. Use the
+checked form instead:
+
+```cpp
+auto result = client.QueryEntitiesChecked("MyTable", "PartitionKey eq 'Users'");
+if (!result.ok) {
+    // result.failure: invalid_request, transport, http_status,
+    //                 malformed_response or incomplete
+    // result.http_status holds the HTTP status when one was received
+    return;
+}
+for (const auto &row : result.rows) { /* ... */ }
+```
+
+- `ok == true` with zero rows means the table or filter matched nothing.
+- `http_status` means the service answered with a status other than 200 (for
+  example 404 for a missing table).
+- `transport` means no response was received.
+- `malformed_response` means the body was not a JSON object with a `value` array.
+- `incomplete` means a later page failed; `rows` is empty, never a partial set.
+- `invalid_request` means the filter could not be URL-escaped; no request is sent.
+- The result never contains a URL, header, token or response body.
+
+`QueryEntitiesCheckedAsync(table, filter, callback)` does the same and calls the
+callback on a worker thread.
+
+Use `AzureTableClient::EscapeFilterString(value)` when placing a value inside a
+quoted OData filter literal; it doubles single quotes:
+
+```cpp
+auto filter = "PartitionKey eq '" + AzureTableClient::EscapeFilterString(name) + "'";
+```
+
+An empty filter queries the whole table.
+
+## Versioning and compatibility
+
+Version 0.1.0 adds the checked API above. The change is additive and
+ABI-compatible: no data member or virtual function was added, no signature
+changed, and the shared library soname stays `libazure-storage-client.so.0`
+(libtool version-info 1:0:1). `QueryEntities` and `QueryEntitiesAsync` keep their
+behaviour, including returning an empty result on failure.
+
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

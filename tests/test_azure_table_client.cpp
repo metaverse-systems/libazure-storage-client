@@ -1,6 +1,10 @@
 #include <catch2/catch_all.hpp>
 #include <libazure-storage-client/azure-storage-client.hpp>
 
+#include "stub_http_server.hpp"
+
+#include <curl/curl.h>
+
 #include <future>
 #include <string>
 #include <vector>
@@ -367,4 +371,270 @@ TEST_CASE("QueryEntities handles pagination with >1000 entities", "[sync][pagina
     auto results = client.QueryEntities(TEST_TABLE,
         "PartitionKey eq 'sync_pagination'");
     REQUIRE(results.size() == TOTAL);
+}
+
+// ---------------------------------------------------------------------------
+// Checked query tests [checked]
+// ---------------------------------------------------------------------------
+
+namespace {
+
+bool AzuriteUp() {
+    static const bool up = []() {
+        CURL *curl = curl_easy_init();
+        if (!curl) return false;
+        curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:10002/");
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 2L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3L);
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+        CURLcode rc = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+        return rc == CURLE_OK;
+    }();
+    return up;
+}
+
+#define REQUIRE_AZURITE() \
+    do { if (!AzuriteUp()) { SKIP("Azurite is not running"); } } while (0)
+
+// Test-only access to the protected escape hook seam.
+struct HookClient : AzureTableClient {
+    using AzureTableClient::AzureTableClient;
+    static void SetHook(UrlEscapeFn hook) { SetUrlEscapeHook(hook); }
+};
+
+bool FailingEscape(const std::string &, std::string &) { return false; }
+
+nlohmann::json Row(const std::string &pk, const std::string &rk) {
+    nlohmann::json e;
+    e["PartitionKey"] = pk;
+    e["RowKey"] = rk;
+    return e;
+}
+
+} // namespace
+
+TEST_CASE("Checked query returns rows on success", "[checked]") {
+    REQUIRE_AZURITE();
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, TABLE_ENDPOINT);
+    REQUIRE(client.UpsertEntity(TEST_TABLE, Row("checked_rows", "a")));
+    REQUIRE(client.UpsertEntity(TEST_TABLE, Row("checked_rows", "b")));
+
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'checked_rows'");
+    REQUIRE(result.ok);
+    REQUIRE(result.failure == AzureTableClient::Failure::none);
+    REQUIRE(result.rows.size() == 2);
+}
+
+TEST_CASE("Checked query distinguishes empty success", "[checked]") {
+    REQUIRE_AZURITE();
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, TABLE_ENDPOINT);
+
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'checked_no_such_pk'");
+    REQUIRE(result.ok);
+    REQUIRE(result.rows.empty());
+    REQUIRE(result.failure == AzureTableClient::Failure::none);
+}
+
+TEST_CASE("Checked query on a missing table reports 404", "[checked]") {
+    REQUIRE_AZURITE();
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, TABLE_ENDPOINT);
+
+    auto result = client.QueryEntitiesChecked("CheckedNoSuchTable", "PartitionKey eq 'x'");
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(result.http_status == 404);
+    REQUIRE(result.rows.empty());
+}
+
+TEST_CASE("Checked query against an unreachable endpoint reports transport", "[checked]") {
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, "http://127.0.0.1:1/devstoreaccount1");
+
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'x'");
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.failure == AzureTableClient::Failure::transport);
+    REQUIRE(result.rows.empty());
+}
+
+TEST_CASE("Async checked query gives the same result", "[checked]") {
+    REQUIRE_AZURITE();
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, TABLE_ENDPOINT);
+    REQUIRE(client.UpsertEntity(TEST_TABLE, Row("checked_async", "a")));
+
+    std::promise<AzureTableClient::QueryResult> okPromise;
+    auto okFuture = okPromise.get_future();
+    client.QueryEntitiesCheckedAsync(TEST_TABLE, "PartitionKey eq 'checked_async'",
+        [&okPromise](AzureTableClient::QueryResult r) { okPromise.set_value(std::move(r)); });
+    auto ok = okFuture.get();
+    REQUIRE(ok.ok);
+    REQUIRE(ok.rows.size() == 1);
+
+    std::promise<AzureTableClient::QueryResult> missPromise;
+    auto missFuture = missPromise.get_future();
+    client.QueryEntitiesCheckedAsync("CheckedNoSuchTable", "PartitionKey eq 'x'",
+        [&missPromise](AzureTableClient::QueryResult r) { missPromise.set_value(std::move(r)); });
+    auto miss = missFuture.get();
+    REQUIRE_FALSE(miss.ok);
+    REQUIRE(miss.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(miss.http_status == 404);
+}
+
+#ifdef __linux__
+
+TEST_CASE("Checked query on a malformed body reports malformed_response", "[checked][stub]") {
+    StubResponse bad;
+    bad.status = 200;
+    bad.body = "this is not json";
+    StubHttpServer server({bad});
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'x'");
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.failure == AzureTableClient::Failure::malformed_response);
+    REQUIRE(result.rows.empty());
+}
+
+TEST_CASE("Checked query on a body without a value array reports malformed_response", "[checked][stub]") {
+    StubResponse bad;
+    bad.status = 200;
+    bad.body = "{\"other\":1}";
+    StubHttpServer server({bad});
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'x'");
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.failure == AzureTableClient::Failure::malformed_response);
+}
+
+TEST_CASE("Checked query on a server error reports http_status", "[checked][stub]") {
+    StubResponse err;
+    err.status = 500;
+    err.body = "{}";
+    StubHttpServer server({err});
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'x'");
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(result.http_status == 500);
+}
+
+TEST_CASE("Page two failure reports incomplete with no rows", "[checked][stub]") {
+    StubResponse page1;
+    page1.status = 200;
+    page1.body = "{\"value\":[{\"PartitionKey\":\"p\",\"RowKey\":\"1\"}]}";
+    page1.headers["x-ms-continuation-nextpartitionkey"] = "p";
+    page1.headers["x-ms-continuation-nextrowkey"] = "2";
+    StubResponse page2;
+    page2.status = 500;
+    page2.body = "{}";
+
+    StubHttpServer server({page1, page2});
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'p'");
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.failure == AzureTableClient::Failure::incomplete);
+    REQUIRE(result.rows.empty());
+    REQUIRE(server.RequestCount() == 2);
+
+    // The async twin gives the same result against a fresh script.
+    StubHttpServer server2({page1, page2});
+    AzureTableClient client2(ACCOUNT_NAME, ACCOUNT_KEY, server2.Endpoint() + "/devstoreaccount1");
+    std::promise<AzureTableClient::QueryResult> promise;
+    auto future = promise.get_future();
+    client2.QueryEntitiesCheckedAsync(TEST_TABLE, "PartitionKey eq 'p'",
+        [&promise](AzureTableClient::QueryResult r) { promise.set_value(std::move(r)); });
+    auto asyncResult = future.get();
+    REQUIRE_FALSE(asyncResult.ok);
+    REQUIRE(asyncResult.failure == AzureTableClient::Failure::incomplete);
+    REQUIRE(asyncResult.rows.empty());
+}
+
+TEST_CASE("Legacy queries return rows on success and empty on failure", "[checked][stub]") {
+    StubResponse good;
+    good.status = 200;
+    good.body = "{\"value\":[{\"PartitionKey\":\"p\",\"RowKey\":\"1\"}]}";
+    StubResponse err;
+    err.status = 500;
+    err.body = "{}";
+
+    {
+        StubHttpServer server({good});
+        AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+        REQUIRE(client.QueryEntities(TEST_TABLE, "PartitionKey eq 'p'").size() == 1);
+    }
+    {
+        StubHttpServer server({good});
+        AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+        std::promise<std::vector<nlohmann::json>> promise;
+        auto future = promise.get_future();
+        client.QueryEntitiesAsync(TEST_TABLE, "PartitionKey eq 'p'",
+            [&promise](std::vector<nlohmann::json> r) { promise.set_value(std::move(r)); });
+        REQUIRE(future.get().size() == 1);
+    }
+    {
+        StubHttpServer server({err});
+        AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+        REQUIRE(client.QueryEntities(TEST_TABLE, "PartitionKey eq 'p'").empty());
+    }
+    {
+        StubHttpServer server({err});
+        AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+        std::promise<std::vector<nlohmann::json>> promise;
+        auto future = promise.get_future();
+        client.QueryEntitiesAsync(TEST_TABLE, "PartitionKey eq 'p'",
+            [&promise](std::vector<nlohmann::json> r) { promise.set_value(std::move(r)); });
+        REQUIRE(future.get().empty());
+    }
+}
+
+TEST_CASE("A failing URL escape step fails closed without sending a request", "[checked][stub]") {
+    StubResponse good;
+    good.status = 200;
+    good.body = "{\"value\":[{\"PartitionKey\":\"p\",\"RowKey\":\"1\"}]}";
+    StubHttpServer server({good});
+    HookClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+
+    HookClient::SetHook(&FailingEscape);
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'p'");
+    HookClient::SetHook(nullptr);
+
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.failure == AzureTableClient::Failure::invalid_request);
+    REQUIRE(result.rows.empty());
+    REQUIRE(server.RequestCount() == 0);
+}
+
+#endif // __linux__
+
+// Code-inspection note: both curl_easy_escape call sites in
+// src/azure-storage-client.cpp (first page and continuation rebuild) must go
+// through the single escape step that honours the hook.
+
+TEST_CASE("EscapeFilterString doubles single quotes", "[checked]") {
+    REQUIRE(AzureTableClient::EscapeFilterString("'") == "''");
+    REQUIRE(AzureTableClient::EscapeFilterString("''") == "''''");
+    REQUIRE(AzureTableClient::EscapeFilterString("a'b") == "a''b");
+    REQUIRE(AzureTableClient::EscapeFilterString("'''") == "''''''");
+    REQUIRE(AzureTableClient::EscapeFilterString("") == "");
+    REQUIRE(AzureTableClient::EscapeFilterString("plain") == "plain");
+}
+
+TEST_CASE("An escaped injection attempt matches nothing", "[checked]") {
+    REQUIRE_AZURITE();
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, TABLE_ENDPOINT);
+    REQUIRE(client.UpsertEntity(TEST_TABLE, Row("checked_inject", "x")));
+    REQUIRE(client.UpsertEntity(TEST_TABLE, Row("checked_inject", "y")));
+
+    std::string filter = "PartitionKey eq 'checked_inject' and RowKey eq '" +
+        AzureTableClient::EscapeFilterString("x' or RowKey ne 'x") + "'";
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, filter);
+    REQUIRE(result.ok);
+    REQUIRE(result.rows.empty());
+
+    std::string plain = "PartitionKey eq 'checked_inject' and RowKey eq '" +
+        AzureTableClient::EscapeFilterString("x") + "'";
+    auto found = client.QueryEntitiesChecked(TEST_TABLE, plain);
+    REQUIRE(found.ok);
+    REQUIRE(found.rows.size() == 1);
 }

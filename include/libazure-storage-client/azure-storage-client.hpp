@@ -7,6 +7,18 @@
 
 class AzureTableClient {
 public:
+    // Why a checked query failed.
+    enum class Failure { none, invalid_request, transport, http_status, malformed_response, incomplete };
+
+    // Outcome of a checked query. rows is empty whenever ok is false.
+    // Never carries a URL, header, token or response body.
+    struct QueryResult {
+        bool ok = false;
+        std::vector<nlohmann::json> rows;
+        Failure failure = Failure::none;
+        long http_status = 0;
+    };
+
     AzureTableClient(const std::string &account_name,
                      const std::string &account_key,
                      const std::string &table_endpoint);
@@ -28,8 +40,20 @@ public:
     bool BatchUpsertEntities(const std::string &table_name,
                              const std::vector<nlohmann::json> &entities);
 
+    // Cannot tell failure from empty; use the Checked form.
     std::vector<nlohmann::json> QueryEntities(const std::string &table_name,
                                               const std::string &filter);
+
+    // Queries a table and reports failure explicitly. An empty filter queries the whole table.
+    QueryResult QueryEntitiesChecked(const std::string &table_name,
+                                     const std::string &filter);
+
+    void QueryEntitiesCheckedAsync(const std::string &table_name,
+                                   const std::string &filter,
+                                   std::function<void(QueryResult)> callback);
+
+    // Doubles single quotes so a value can be placed inside an OData string literal.
+    static std::string EscapeFilterString(const std::string &value);
 
     bool DeleteEntity(const std::string &table_name,
                       const std::string &partition_key,
@@ -48,6 +72,7 @@ public:
                                   const std::vector<nlohmann::json> &entities,
                                   std::function<void(bool)> callback);
 
+    // Cannot tell failure from empty; use the Checked form.
     void QueryEntitiesAsync(const std::string &table_name,
                             const std::string &filter,
                             std::function<void(std::vector<nlohmann::json>)> callback);
@@ -56,6 +81,12 @@ public:
                            const std::string &partition_key,
                            const std::string &row_key,
                            std::function<void(bool)> callback);
+
+protected:
+    // Test seam for the URL-escape step. A hook returning false makes a query fail
+    // closed (invalid_request, no request sent). nullptr restores the real escape.
+    using UrlEscapeFn = bool (*)(const std::string &in, std::string &out);
+    static void SetUrlEscapeHook(UrlEscapeFn hook);
 
 private:
     std::string account_name;

@@ -4,4 +4,6 @@ test_azure_table_client_CXXFLAGS = $(CATCH2_CFLAGS) $(LIBCURL_CFLAGS) $(OPENSSL_
 test_azure_table_client_LDADD = $(top_builddir)/src/libazure-storage-client.la $(CATCH2_LIBS) $(LIBCURL_LIBS) $(OPENSSL_LIBS)
 test_azure_table_client_LDFLAGS = -pthread
 
+EXTRA_DIST = stub_http_server.hpp
+
 TESTS = test_azure_table_client

@@ -466,25 +466,75 @@ bool AzureTableClient::BatchUpsertEntities(const std::string &table_name,
     return true;
 }
 
-std::vector<nlohmann::json> AzureTableClient::QueryEntities(const std::string &table_name,
-                                                            const std::string &filter)
+namespace {
+
+bool real_url_escape(const std::string &in, std::string &out)
 {
-    std::vector<nlohmann::json> results;
+    char *encoded = curl_easy_escape(nullptr, in.c_str(), static_cast<int>(in.size()));
+    if (!encoded)
+        return false;
+    out = encoded;
+    curl_free(encoded);
+    return true;
+}
+
+using EscapeFn = bool (*)(const std::string &, std::string &);
+EscapeFn url_escape_hook = nullptr;
+
+// url_escape — the single URL-escape step for query strings; false means fail closed
+bool url_escape(const std::string &in, std::string &out)
+{
+    EscapeFn hook = url_escape_hook;
+    return hook ? hook(in, out) : real_url_escape(in, out);
+}
+
+} // anonymous namespace
+
+void AzureTableClient::SetUrlEscapeHook(UrlEscapeFn hook)
+{
+    url_escape_hook = hook;
+}
+
+std::string AzureTableClient::EscapeFilterString(const std::string &value)
+{
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (char c : value)
+    {
+        if (c == '\'')
+            escaped += "''";
+        else
+            escaped += c;
+    }
+    return escaped;
+}
+
+AzureTableClient::QueryResult AzureTableClient::QueryEntitiesChecked(const std::string &table_name,
+                                                                      const std::string &filter)
+{
+    QueryResult result;
+
+    auto fail = [&result](Failure failure, long status) {
+        result.ok = false;
+        result.rows.clear();
+        result.failure = failure;
+        result.http_status = status;
+        return result;
+    };
 
     std::string base_url = this->table_endpoint + "/" + table_name + "()";
 
-    // Build initial query string
-    std::string query_params;
+    std::string filter_params;
     if (!filter.empty())
     {
-        char *encoded = curl_easy_escape(nullptr, filter.c_str(),
-                                         static_cast<int>(filter.size()));
-        if (encoded)
-        {
-            query_params = "?$filter=" + std::string(encoded);
-            curl_free(encoded);
-        }
+        std::string encoded;
+        if (!url_escape(filter, encoded))
+            return fail(Failure::invalid_request, 0);
+        filter_params = "?$filter=" + encoded;
     }
+
+    std::string query_params = filter_params;
+    bool first_page = true;
 
     while (true)
     {
@@ -510,48 +560,52 @@ std::vector<nlohmann::json> AzureTableClient::QueryEntities(const std::string &t
 
         auto response = perform_request("GET", url, headers, "");
 
+        if (response.status == 0)
+            return fail(first_page ? Failure::transport : Failure::incomplete, 0);
+
         if (response.status != 200)
-            return {};
+            return fail(first_page ? Failure::http_status : Failure::incomplete, response.status);
 
         auto parsed = nlohmann::json::parse(response.body, nullptr, false);
-        if (parsed.is_discarded() || !parsed.contains("value"))
-            return {};
+        if (parsed.is_discarded() || !parsed.is_object() ||
+            !parsed.contains("value") || !parsed["value"].is_array())
+            return fail(first_page ? Failure::malformed_response : Failure::incomplete, response.status);
 
         for (auto &entity : parsed["value"])
-            results.push_back(std::move(entity));
+            result.rows.push_back(std::move(entity));
 
-        // Check for continuation tokens
         auto npk = response.headers.find("x-ms-continuation-nextpartitionkey");
         auto nrk = response.headers.find("x-ms-continuation-nextrowkey");
 
         if (npk == response.headers.end())
             break;
 
-        // Build query params for next page
-        std::string separator = filter.empty() ? "?" : "&";
-        if (query_params.empty())
-            separator = "?";
+        std::string escaped_pk;
+        if (!url_escape(npk->second, escaped_pk))
+            return fail(Failure::incomplete, 0);
 
-        // Re-build query_params with continuation tokens
-        query_params = "";
-        if (!filter.empty())
-        {
-            char *encoded = curl_easy_escape(nullptr, filter.c_str(),
-                                             static_cast<int>(filter.size()));
-            if (encoded)
-            {
-                query_params = "?$filter=" + std::string(encoded);
-                curl_free(encoded);
-            }
-        }
-
-        std::string cont_sep = query_params.empty() ? "?" : "&";
-        query_params += cont_sep + "NextPartitionKey=" + npk->second;
+        query_params = filter_params;
+        query_params += (query_params.empty() ? "?" : "&");
+        query_params += "NextPartitionKey=" + escaped_pk;
         if (nrk != response.headers.end())
-            query_params += "&NextRowKey=" + nrk->second;
+        {
+            std::string escaped_rk;
+            if (!url_escape(nrk->second, escaped_rk))
+                return fail(Failure::incomplete, 0);
+            query_params += "&NextRowKey=" + escaped_rk;
+        }
+        first_page = false;
     }
 
-    return results;
+    result.ok = true;
+    result.failure = Failure::none;
+    return result;
+}
+
+std::vector<nlohmann::json> AzureTableClient::QueryEntities(const std::string &table_name,
+                                                            const std::string &filter)
+{
+    return this->QueryEntitiesChecked(table_name, filter).rows;
 }
 
 bool AzureTableClient::DeleteEntity(const std::string &table_name,
@@ -628,6 +682,17 @@ void AzureTableClient::QueryEntitiesAsync(const std::string &table_name,
     std::thread([client_copy, table_name, filter, callback]() mutable {
         auto result = client_copy.QueryEntities(table_name, filter);
         if (callback) callback(result);
+    }).detach();
+}
+
+void AzureTableClient::QueryEntitiesCheckedAsync(const std::string &table_name,
+                                                 const std::string &filter,
+                                                 std::function<void(QueryResult)> callback)
+{
+    AzureTableClient client_copy = *this;
+    std::thread([client_copy, table_name, filter, callback]() mutable {
+        auto result = client_copy.QueryEntitiesChecked(table_name, filter);
+        if (callback) callback(std::move(result));
     }).detach();
 }
 
