@@ -317,37 +317,108 @@ bool AzureTableClient::CreateTableIfNotExists(const std::string &table_name)
     return (response.status == 201 || response.status == 409);
 }
 
+AzureTableClient::EntityResult AzureTableClient::GetEntityChecked(const std::string &table_name,
+                                           const std::string &partition_key,
+                                           const std::string &row_key)
+{
+    EntityResult result;
+    try
+    {
+        std::string url = build_entity_url(this->table_endpoint, table_name,
+                                           partition_key, row_key);
+
+        std::string date = build_date_string();
+
+        std::vector<std::string> headers;
+        headers.push_back("Accept: application/json;odata=nometadata");
+        headers.push_back("x-ms-date: " + date);
+        headers.push_back("x-ms-version: 2021-12-02");
+
+        if (!this->bearer_token.empty())
+        {
+            headers.push_back("Authorization: Bearer " + this->bearer_token);
+        }
+        else if (!this->account_name.empty() && !this->account_key.empty())
+        {
+            std::string auth = build_shared_key_auth_header(
+                "GET", "", "", date,
+                this->account_name, this->account_key, url_path(url));
+            headers.push_back("Authorization: " + auth);
+        }
+
+        auto response = perform_request("GET", url, headers, "");
+
+        auto fail = [&result](Failure failure, long status) {
+            result.ok = false;
+            result.found = false;
+            result.row = nullptr;
+            result.failure = failure;
+            result.http_status = status;
+        };
+
+        if (response.status == 0)
+        {
+            fail(Failure::transport, 0);
+        }
+        else if (response.status == 200)
+        {
+            auto parsed = nlohmann::json::parse(response.body, nullptr, false);
+            if (parsed.is_discarded() || !parsed.is_object())
+            {
+                fail(Failure::malformed_response, 200);
+            }
+            else
+            {
+                result.ok = true;
+                result.found = true;
+                result.row = std::move(parsed);
+            }
+        }
+        else if (response.status == 404)
+        {
+            auto parsed = nlohmann::json::parse(response.body, nullptr, false);
+            bool absent = false;
+            if (parsed.is_object())
+            {
+                auto err = parsed.find("odata.error");
+                if (err != parsed.end() && err->is_object())
+                {
+                    auto code = err->find("code");
+                    absent = code != err->end() && code->is_string() &&
+                             code->get<std::string>() == "ResourceNotFound";
+                }
+            }
+            if (absent)
+            {
+                result.ok = true;
+                result.found = false;
+            }
+            else
+            {
+                fail(Failure::http_status, 404);
+            }
+        }
+        else
+        {
+            fail(Failure::http_status, response.status);
+        }
+    }
+    catch (...)
+    {
+        result = EntityResult();
+        result.failure = Failure::transport;
+    }
+
+    return result;
+}
+
 nlohmann::json AzureTableClient::GetEntity(const std::string &table_name,
                                            const std::string &partition_key,
                                            const std::string &row_key)
 {
-    std::string url = build_entity_url(this->table_endpoint, table_name,
-                                       partition_key, row_key);
-
-    std::string date = build_date_string();
-
-    std::vector<std::string> headers;
-    headers.push_back("Accept: application/json;odata=nometadata");
-    headers.push_back("x-ms-date: " + date);
-    headers.push_back("x-ms-version: 2021-12-02");
-
-    if (!this->bearer_token.empty())
-    {
-        headers.push_back("Authorization: Bearer " + this->bearer_token);
-    }
-    else if (!this->account_name.empty() && !this->account_key.empty())
-    {
-        std::string auth = build_shared_key_auth_header(
-            "GET", "", "", date,
-            this->account_name, this->account_key, url_path(url));
-        headers.push_back("Authorization: " + auth);
-    }
-
-    auto response = perform_request("GET", url, headers, "");
-
-    if (response.status == 200)
-        return nlohmann::json::parse(response.body, nullptr, false);
-
+    auto result = this->GetEntityChecked(table_name, partition_key, row_key);
+    if (result.found)
+        return result.row;
     return {};
 }
 
@@ -638,6 +709,18 @@ bool AzureTableClient::DeleteEntity(const std::string &table_name,
     auto response = perform_request("DELETE", url, headers, "");
 
     return (response.status == 204);
+}
+
+void AzureTableClient::GetEntityCheckedAsync(const std::string &table_name,
+                                             const std::string &partition_key,
+                                             const std::string &row_key,
+                                             std::function<void(EntityResult)> callback)
+{
+    AzureTableClient client_copy = *this;
+    std::thread([client_copy, table_name, partition_key, row_key, callback]() mutable {
+        auto result = client_copy.GetEntityChecked(table_name, partition_key, row_key);
+        if (callback) callback(std::move(result));
+    }).detach();
 }
 
 void AzureTableClient::GetEntityAsync(const std::string &table_name,

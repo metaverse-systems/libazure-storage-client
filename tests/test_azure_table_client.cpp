@@ -479,6 +479,37 @@ TEST_CASE("Async checked query gives the same result", "[checked]") {
     REQUIRE(miss.http_status == 404);
 }
 
+// ---------------------------------------------------------------------------
+// Checked single-entity read [checked-get] (Azurite)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Checked get round trip against Azurite: found, absent, missing table", "[checked-get]") {
+    REQUIRE_AZURITE();
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, TABLE_ENDPOINT);
+
+    nlohmann::json entity = Row("cg-part", "cg-row");
+    entity["value"] = 7;
+    REQUIRE(client.UpsertEntity(TEST_TABLE, entity));
+
+    auto found = client.GetEntityChecked(TEST_TABLE, "cg-part", "cg-row");
+    REQUIRE(found.ok);
+    REQUIRE(found.found);
+    REQUIRE(found.failure == AzureTableClient::Failure::none);
+    REQUIRE(found.row.is_object());
+    REQUIRE(found.row["value"] == 7);
+
+    auto absent = client.GetEntityChecked(TEST_TABLE, "cg-part", "no-such-row");
+    REQUIRE(absent.ok);
+    REQUIRE_FALSE(absent.found);
+    REQUIRE(absent.row.is_null());
+
+    auto missing = client.GetEntityChecked("CheckedGetNoSuchTable", "cg-part", "cg-row");
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE_FALSE(missing.found);
+    REQUIRE(missing.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(missing.http_status == 404);
+}
+
 #ifdef __linux__
 
 TEST_CASE("Checked query on a malformed body reports malformed_response", "[checked][stub]") {
@@ -603,6 +634,166 @@ TEST_CASE("A failing URL escape step fails closed without sending a request", "[
     REQUIRE(result.failure == AzureTableClient::Failure::invalid_request);
     REQUIRE(result.rows.empty());
     REQUIRE(server.RequestCount() == 0);
+}
+
+// ---------------------------------------------------------------------------
+// Checked single-entity read [checked-get] (stub server)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+StubResponse Reply(int status, const std::string &body) {
+    StubResponse r;
+    r.status = status;
+    r.body = body;
+    return r;
+}
+
+const std::string RESOURCE_NOT_FOUND =
+    "{\"odata.error\":{\"code\":\"ResourceNotFound\",\"message\":{\"lang\":\"en-US\","
+    "\"value\":\"The specified resource does not exist.\"}}}";
+const std::string TABLE_NOT_FOUND =
+    "{\"odata.error\":{\"code\":\"TableNotFound\",\"message\":{\"lang\":\"en-US\","
+    "\"value\":\"The table specified does not exist.\"}}}";
+
+AzureTableClient::EntityResult StubGet(const StubResponse &response) {
+    StubHttpServer server({response});
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+    return client.GetEntityChecked(TEST_TABLE, "p", "r");
+}
+
+} // namespace
+
+TEST_CASE("Checked get: 200 with an object is found", "[checked-get][stub]") {
+    auto result = StubGet(Reply(200, "{\"PartitionKey\":\"p\",\"RowKey\":\"r\",\"characterId\":\"c1\"}"));
+    REQUIRE(result.ok);
+    REQUIRE(result.found);
+    REQUIRE(result.failure == AzureTableClient::Failure::none);
+    REQUIRE(result.row.is_object());
+    REQUIRE(result.row["characterId"] == "c1");
+}
+
+TEST_CASE("Checked get: 404 ResourceNotFound is a definite absence", "[checked-get][stub]") {
+    auto result = StubGet(Reply(404, RESOURCE_NOT_FOUND));
+    REQUIRE(result.ok);
+    REQUIRE_FALSE(result.found);
+    REQUIRE(result.failure == AzureTableClient::Failure::none);
+    REQUIRE(result.row.is_null());
+}
+
+TEST_CASE("Checked get: 404 TableNotFound is a failure", "[checked-get][stub]") {
+    auto result = StubGet(Reply(404, TABLE_NOT_FOUND));
+    REQUIRE_FALSE(result.ok);
+    REQUIRE_FALSE(result.found);
+    REQUIRE(result.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(result.http_status == 404);
+    REQUIRE(result.row.is_null());
+}
+
+TEST_CASE("Checked get: 404 with no body is a failure", "[checked-get][stub]") {
+    auto result = StubGet(Reply(404, ""));
+    REQUIRE_FALSE(result.ok);
+    REQUIRE_FALSE(result.found);
+    REQUIRE(result.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(result.http_status == 404);
+}
+
+TEST_CASE("Checked get: 500 and 503 are failures with their status", "[checked-get][stub]") {
+    for (int status : {500, 503}) {
+        auto result = StubGet(Reply(status, "{}"));
+        REQUIRE_FALSE(result.ok);
+        REQUIRE_FALSE(result.found);
+        REQUIRE(result.failure == AzureTableClient::Failure::http_status);
+        REQUIRE(result.http_status == status);
+        REQUIRE(result.row.is_null());
+    }
+}
+
+TEST_CASE("Checked get: a 200 body that is not an object is malformed_response", "[checked-get][stub]") {
+    for (const std::string body : {std::string("this is not json"), std::string("[1,2,3]")}) {
+        auto result = StubGet(Reply(200, body));
+        REQUIRE_FALSE(result.ok);
+        REQUIRE_FALSE(result.found);
+        REQUIRE(result.failure == AzureTableClient::Failure::malformed_response);
+        REQUIRE(result.row.is_null());
+    }
+}
+
+TEST_CASE("Checked get: 200 with an empty object is found", "[checked-get][stub]") {
+    // The contract only requires a JSON object; an empty one is still an object.
+    auto result = StubGet(Reply(200, "{}"));
+    REQUIRE(result.ok);
+    REQUIRE(result.found);
+    REQUIRE(result.row.is_object());
+}
+
+TEST_CASE("Checked get: an unreachable endpoint reports transport", "[checked-get][stub]") {
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, "http://127.0.0.1:1/devstoreaccount1");
+    auto result = client.GetEntityChecked(TEST_TABLE, "p", "r");
+    REQUIRE_FALSE(result.ok);
+    REQUIRE_FALSE(result.found);
+    REQUIRE(result.failure == AzureTableClient::Failure::transport);
+    REQUIRE(result.http_status == 0);
+    REQUIRE(result.row.is_null());
+}
+
+TEST_CASE("Checked get: async form gives the same results", "[checked-get][stub]") {
+    auto run = [](const StubResponse &response) {
+        StubHttpServer server({response});
+        AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+        std::promise<AzureTableClient::EntityResult> promise;
+        auto future = promise.get_future();
+        client.GetEntityCheckedAsync(TEST_TABLE, "p", "r",
+            [&promise](AzureTableClient::EntityResult r) { promise.set_value(std::move(r)); });
+        return future.get();
+    };
+
+    auto found = run(Reply(200, "{\"PartitionKey\":\"p\",\"RowKey\":\"r\"}"));
+    REQUIRE(found.ok);
+    REQUIRE(found.found);
+    REQUIRE(found.row.is_object());
+
+    auto absent = run(Reply(404, RESOURCE_NOT_FOUND));
+    REQUIRE(absent.ok);
+    REQUIRE_FALSE(absent.found);
+
+    auto failed = run(Reply(503, "{}"));
+    REQUIRE_FALSE(failed.ok);
+    REQUIRE(failed.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(failed.http_status == 503);
+
+    auto malformed = run(Reply(200, "nope"));
+    REQUIRE_FALSE(malformed.ok);
+    REQUIRE(malformed.failure == AzureTableClient::Failure::malformed_response);
+}
+
+TEST_CASE("GetEntity keeps its behaviour: the row when found, null otherwise", "[checked-get][stub]") {
+    {
+        StubHttpServer server({Reply(200, "{\"PartitionKey\":\"p\",\"RowKey\":\"r\"}")});
+        AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+        auto row = client.GetEntity(TEST_TABLE, "p", "r");
+        REQUIRE(row.is_object());
+        REQUIRE(row["RowKey"] == "r");
+    }
+    for (const auto &response : {Reply(404, RESOURCE_NOT_FOUND), Reply(404, TABLE_NOT_FOUND), Reply(500, "{}"),
+                                 Reply(200, "garbage")}) {
+        StubHttpServer server({response});
+        AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+        REQUIRE(client.GetEntity(TEST_TABLE, "p", "r").is_null());
+    }
+}
+
+TEST_CASE("Checked get: a failed result carries no row, URL, token or body", "[checked-get][stub]") {
+    const std::string secret = "SECRET-BODY-TEXT-9917";
+    StubHttpServer server({Reply(500, "{\"detail\":\"" + secret + "\"}")});
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+
+    auto result = client.GetEntityChecked(TEST_TABLE, "partition-xyz", "row-xyz");
+    REQUIRE_FALSE(result.ok);
+    REQUIRE_FALSE(result.found);
+    REQUIRE(result.row.is_null());
+    REQUIRE(result.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(result.http_status == 500);
 }
 
 #endif // __linux__

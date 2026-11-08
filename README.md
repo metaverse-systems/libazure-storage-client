@@ -173,11 +173,17 @@ An empty filter queries the whole table.
 
 ## Versioning and compatibility
 
-Version 0.1.0 adds the checked API above. The change is additive and
+Version 0.1.0 added the checked API above. The change is additive and
 ABI-compatible: no data member or virtual function was added, no signature
 changed, and the shared library soname stays `libazure-storage-client.so.0`
 (libtool version-info 1:0:1). `QueryEntities` and `QueryEntitiesAsync` keep their
 behaviour, including returning an empty result on failure.
+
+Version 0.2.0 adds `GetEntityChecked` and `GetEntityCheckedAsync`, which return an
+`EntityResult` (`ok`, `found`, `row`, `failure`, `http_status`). A 404 `ResourceNotFound`
+is a definite absence (`ok`, not `found`); every other non-200 outcome is a failure.
+`GetEntity` and `GetEntityAsync` are unchanged for callers: they cannot tell failure
+from empty, so use the Checked form.
 
 ## License
 

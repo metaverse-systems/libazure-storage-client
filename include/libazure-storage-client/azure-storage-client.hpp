@@ -19,6 +19,17 @@ public:
         long http_status = 0;
     };
 
+    // Outcome of a checked single-entity read. row is null unless found.
+    // ok && !found is a definite absence (404 ResourceNotFound).
+    // Never carries a URL, header, token or response body.
+    struct EntityResult {
+        bool ok = false;
+        bool found = false;
+        nlohmann::json row;
+        Failure failure = Failure::none;
+        long http_status = 0;
+    };
+
     AzureTableClient(const std::string &account_name,
                      const std::string &account_key,
                      const std::string &table_endpoint);
@@ -30,9 +41,20 @@ public:
 
     bool CreateTableIfNotExists(const std::string &table_name);
 
+    // Cannot tell failure from empty; use the Checked form.
     nlohmann::json GetEntity(const std::string &table_name,
                              const std::string &partition_key,
                              const std::string &row_key);
+
+    // Reads one entity and reports failure explicitly. Never throws.
+    EntityResult GetEntityChecked(const std::string &table_name,
+                                  const std::string &partition_key,
+                                  const std::string &row_key);
+
+    void GetEntityCheckedAsync(const std::string &table_name,
+                               const std::string &partition_key,
+                               const std::string &row_key,
+                               std::function<void(EntityResult)> callback);
 
     bool UpsertEntity(const std::string &table_name,
                       const nlohmann::json &entity);
@@ -59,6 +81,7 @@ public:
                       const std::string &partition_key,
                       const std::string &row_key);
 
+    // Cannot tell failure from empty; use the Checked form.
     void GetEntityAsync(const std::string &table_name,
                         const std::string &partition_key,
                         const std::string &row_key,
