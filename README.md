@@ -185,6 +185,16 @@ is a definite absence (`ok`, not `found`); every other non-200 outcome is a fail
 `GetEntity` and `GetEntityAsync` are unchanged for callers: they cannot tell failure
 from empty, so use the Checked form.
 
+Version 0.3.0 makes whole numbers round-trip exactly. A write sends every integer property outside the
+32-bit range as a decimal string with a sibling `<key>@odata.type` of `Edm.Int64`, so the service keeps a
+64-bit integer instead of an approximate decimal; reads (`GetEntity`, `GetEntityChecked`, `QueryEntities`,
+`QueryEntitiesChecked` and their async forms) turn those annotated values back into JSON integers and strip
+the metadata keys. A write holding an unsigned value above `INT64_MAX` is refused (returns false). The
+change is additive: no signature changed. `tests/test_azure_table_client` has an opt-in case that talks to a
+real account (tag `[real-account]`, hidden from `make check`, skipped unless `AZURE_TABLE_ACCOUNT`,
+`AZURE_TABLE_ENDPOINT` and `AZURE_TABLE_KEY` are all set); run it with
+`./test_azure_table_client "[real-account]"`. It prints no key, endpoint or row body.
+
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
