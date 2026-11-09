@@ -12,11 +12,21 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cctype>
+#include <cstdlib>
 #include <map>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+
+// One request the stub received: method, request target, headers (names lower-cased) and body.
+struct StubRequest {
+    std::string method;
+    std::string target;
+    std::map<std::string, std::string> headers;
+    std::string body;
+};
 
 struct StubResponse {
     int status = 200;
@@ -64,7 +74,49 @@ public:
         return this->lines;
     }
 
+    // Every request received so far, in arrival order, with its method, headers and body.
+    std::vector<StubRequest> Requests() {
+        std::lock_guard<std::mutex> lock(this->mutex);
+        return this->captured;
+    }
+
+    // The most recent request received (empty when none).
+    StubRequest LastRequest() {
+        std::lock_guard<std::mutex> lock(this->mutex);
+        return this->captured.empty() ? StubRequest{} : this->captured.back();
+    }
+
 private:
+    static std::string Lower(std::string text) {
+        for (auto &c : text) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+        return text;
+    }
+
+    static StubRequest Parse(const std::string &head) {
+        StubRequest out;
+        size_t lineEnd = head.find("\r\n");
+        std::string first = head.substr(0, lineEnd);
+        size_t a = first.find(' ');
+        if (a != std::string::npos) {
+            out.method = first.substr(0, a);
+            size_t b = first.find(' ', a + 1);
+            out.target = first.substr(a + 1, b == std::string::npos ? std::string::npos : b - a - 1);
+        }
+        size_t pos = lineEnd == std::string::npos ? head.size() : lineEnd + 2;
+        while (pos < head.size()) {
+            size_t end = head.find("\r\n", pos);
+            if (end == std::string::npos) end = head.size();
+            std::string line = head.substr(pos, end - pos);
+            pos = end + 2;
+            size_t colon = line.find(':');
+            if (colon == std::string::npos) continue;
+            std::string value = line.substr(colon + 1);
+            size_t start = value.find_first_not_of(" \t");
+            out.headers[Lower(line.substr(0, colon))] = start == std::string::npos ? "" : value.substr(start);
+        }
+        return out;
+    }
+
     void Serve() {
         while (!this->stopping) {
             int fd = ::accept(this->listenFd, nullptr, nullptr);
@@ -77,10 +129,25 @@ private:
                 req.append(buf, static_cast<size_t>(n));
             }
             if (req.empty()) { ::close(fd); continue; }
+            StubRequest parsed = Parse(req.substr(0, req.find("\r\n\r\n")));
+            {
+                size_t contentLength = 0;
+                auto it = parsed.headers.find("content-length");
+                if (it != parsed.headers.end()) contentLength = static_cast<size_t>(::strtoull(it->second.c_str(), nullptr, 10));
+                size_t bodyStart = req.find("\r\n\r\n");
+                bodyStart = bodyStart == std::string::npos ? req.size() : bodyStart + 4;
+                while (req.size() - bodyStart < contentLength) {
+                    ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+                    if (n <= 0) break;
+                    req.append(buf, static_cast<size_t>(n));
+                }
+                parsed.body = req.substr(bodyStart);
+            }
             size_t index = static_cast<size_t>(this->requests.fetch_add(1));
             {
                 std::lock_guard<std::mutex> lock(this->mutex);
                 this->lines.push_back(req.substr(0, req.find("\r\n")));
+                this->captured.push_back(parsed);
             }
             StubResponse r;
             if (!this->script.empty())
@@ -107,6 +174,7 @@ private:
     std::atomic<int> requests{0};
     std::mutex mutex;
     std::vector<std::string> lines;
+    std::vector<StubRequest> captured;
     std::thread worker;
 };
 
