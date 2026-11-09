@@ -11,6 +11,9 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <charconv>
+#include <cstdint>
+#include <system_error>
 
 namespace {
 
@@ -258,6 +261,86 @@ std::string build_entity_url(const std::string &endpoint,
            "',RowKey='" + escape_odata_key(row_key) + "')";
 }
 
+// annotate_large_integers — rewrite every property (except the row keys) whose integer value is
+// outside int32 as a decimal string plus a sibling "<key>@odata.type" = "Edm.Int64".
+// Returns false when a value cannot be stored (unsigned above INT64_MAX); the entity is then unusable.
+bool annotate_large_integers(nlohmann::json &entity)
+{
+    if (!entity.is_object())
+        return true;
+
+    std::vector<std::string> large;
+    for (auto it = entity.begin(); it != entity.end(); ++it)
+    {
+        if (it.key() == "PartitionKey" || it.key() == "RowKey")
+            continue;
+        if (!it.value().is_number_integer())
+            continue;
+        if (it.value().is_number_unsigned() &&
+            it.value().get<std::uint64_t>() > static_cast<std::uint64_t>(INT64_MAX))
+            return false;
+        std::int64_t v = it.value().get<std::int64_t>();
+        if (v < INT32_MIN || v > INT32_MAX)
+            large.push_back(it.key());
+    }
+
+    for (const auto &key : large)
+    {
+        std::string type_key = key + "@odata.type";
+        if (entity.contains(type_key))
+            continue;
+        entity[key] = std::to_string(entity[key].get<std::int64_t>());
+        entity[type_key] = "Edm.Int64";
+    }
+    return true;
+}
+
+// parse_int64 — strict signed 64-bit decimal; false when it does not parse or overflows
+bool parse_int64(const std::string &text, std::int64_t &out)
+{
+    if (text.empty())
+        return false;
+    const char *first = text.data();
+    const char *last = text.data() + text.size();
+    if (*first == '+')
+        return false;
+    std::int64_t value = 0;
+    auto res = std::from_chars(first, last, value);
+    if (res.ec != std::errc() || res.ptr != last)
+        return false;
+    out = value;
+    return true;
+}
+
+// restore_row — convert annotated Edm.Int64 strings to integers, then strip metadata keys
+void restore_row(nlohmann::json &row)
+{
+    if (!row.is_object())
+        return;
+
+    for (auto it = row.begin(); it != row.end(); ++it)
+    {
+        const std::string &key = it.key();
+        if (!it.value().is_string())
+            continue;
+        auto type = row.find(key + "@odata.type");
+        if (type == row.end() || !type->is_string() || type->get<std::string>() != "Edm.Int64")
+            continue;
+        std::int64_t parsed = 0;
+        if (parse_int64(it.value().get<std::string>(), parsed))
+            it.value() = parsed;
+    }
+
+    for (auto it = row.begin(); it != row.end();)
+    {
+        const std::string &key = it.key();
+        if (key.rfind("odata.", 0) == 0 || key.find("@odata.type") != std::string::npos)
+            it = row.erase(it);
+        else
+            ++it;
+    }
+}
+
 } // anonymous namespace
 
 AzureTableClient::AzureTableClient(const std::string &account_name,
@@ -330,7 +413,7 @@ AzureTableClient::EntityResult AzureTableClient::GetEntityChecked(const std::str
         std::string date = build_date_string();
 
         std::vector<std::string> headers;
-        headers.push_back("Accept: application/json;odata=nometadata");
+        headers.push_back("Accept: application/json;odata=minimalmetadata");
         headers.push_back("x-ms-date: " + date);
         headers.push_back("x-ms-version: 2021-12-02");
 
@@ -369,6 +452,7 @@ AzureTableClient::EntityResult AzureTableClient::GetEntityChecked(const std::str
             }
             else
             {
+                restore_row(parsed);
                 result.ok = true;
                 result.found = true;
                 result.row = std::move(parsed);
@@ -433,7 +517,10 @@ bool AzureTableClient::UpsertEntity(const std::string &table_name,
     std::string rk = entity["RowKey"].get<std::string>();
 
     std::string url = build_entity_url(this->table_endpoint, table_name, pk, rk);
-    std::string body = entity.dump();
+    nlohmann::json wire = entity;
+    if (!annotate_large_integers(wire))
+        return false;
+    std::string body = wire.dump();
     std::string date = build_date_string();
     std::string content_type = "application/json;odata=nometadata";
 
@@ -469,6 +556,11 @@ bool AzureTableClient::BatchUpsertEntities(const std::string &table_name,
     if (entities.size() > 100)
         return false;
 
+    std::vector<nlohmann::json> wires = entities;
+    for (auto &wire : wires)
+        if (!annotate_large_integers(wire))
+            return false;
+
     std::string batch_boundary = "batch_asc";
     std::string changeset_boundary = "changeset_asc";
 
@@ -478,7 +570,7 @@ bool AzureTableClient::BatchUpsertEntities(const std::string &table_name,
     body += "Content-Type: multipart/mixed; boundary=" + changeset_boundary + "\r\n";
     body += "\r\n";
 
-    for (const auto &entity : entities)
+    for (const auto &entity : wires)
     {
         if (!entity.contains("PartitionKey") || !entity["PartitionKey"].is_string() ||
             !entity.contains("RowKey") || !entity["RowKey"].is_string())
@@ -613,7 +705,7 @@ AzureTableClient::QueryResult AzureTableClient::QueryEntitiesChecked(const std::
         std::string date = build_date_string();
 
         std::vector<std::string> headers;
-        headers.push_back("Accept: application/json;odata=nometadata");
+        headers.push_back("Accept: application/json;odata=minimalmetadata");
         headers.push_back("x-ms-date: " + date);
         headers.push_back("x-ms-version: 2021-12-02");
 
@@ -643,7 +735,10 @@ AzureTableClient::QueryResult AzureTableClient::QueryEntitiesChecked(const std::
             return fail(first_page ? Failure::malformed_response : Failure::incomplete, response.status);
 
         for (auto &entity : parsed["value"])
+        {
+            restore_row(entity);
             result.rows.push_back(std::move(entity));
+        }
 
         auto npk = response.headers.find("x-ms-continuation-nextpartitionkey");
         auto nrk = response.headers.find("x-ms-continuation-nextrowkey");

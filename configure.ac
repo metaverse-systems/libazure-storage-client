@@ -1,4 +1,4 @@
-AC_INIT([azure-storage-client], [0.2.0])
+AC_INIT([azure-storage-client], [0.3.0])
 AM_INIT_AUTOMAKE([foreign subdir-objects])
 LT_INIT
 AC_PROG_CXX

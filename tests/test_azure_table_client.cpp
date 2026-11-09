@@ -4,6 +4,15 @@
 #include "stub_http_server.hpp"
 
 #include <curl/curl.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+
+#include <climits>
+#include <cstdint>
+#include <cstdlib>
+#include <ctime>
+#include <iostream>
+#include <limits>
 
 #include <future>
 #include <string>
@@ -828,4 +837,533 @@ TEST_CASE("An escaped injection attempt matches nothing", "[checked]") {
     auto found = client.QueryEntitiesChecked(TEST_TABLE, plain);
     REQUIRE(found.ok);
     REQUIRE(found.rows.size() == 1);
+}
+
+// ---------------------------------------------------------------------------
+// Large-integer wire encoding [wire] and reading [reader]
+// ---------------------------------------------------------------------------
+
+namespace {
+
+using json = nlohmann::json;
+
+constexpr int64_t kInt64Min = std::numeric_limits<int64_t>::min();
+constexpr int64_t kInt64Max = std::numeric_limits<int64_t>::max();
+constexpr int64_t kTwo53 = 9007199254740992LL;
+
+// The integers that must travel as annotated strings (outside int32).
+std::vector<int64_t> LargeIntegers() {
+    return {1700000000000LL, -1700000000000LL, 2147483648LL, -2147483649LL, kTwo53, -kTwo53, kInt64Min, kInt64Max};
+}
+
+// The integers that must stay bare numbers (inside int32).
+std::vector<int64_t> SmallIntegers() {
+    return {0, 5, -5, 2147483647LL, -2147483648LL};
+}
+
+std::string PropName(size_t index) { return "p" + std::to_string(index); }
+
+} // namespace
+
+#ifdef __linux__
+
+namespace {
+
+// The JSON bodies of every sub-request in a captured multipart batch body.
+std::vector<json> BatchBodies(const std::string &body) {
+    std::vector<json> out;
+    size_t pos = 0;
+    while ((pos = body.find("PUT ", pos)) != std::string::npos) {
+        size_t blank = body.find("\r\n\r\n", pos);
+        if (blank == std::string::npos) break;
+        size_t start = blank + 4;
+        size_t end = body.find("\r\n", start);
+        out.push_back(json::parse(body.substr(start, end - start), nullptr, false));
+        pos = end;
+    }
+    return out;
+}
+
+json LastBody(StubHttpServer &server) { return json::parse(server.LastRequest().body, nullptr, false); }
+
+AzureTableClient StubClient(StubHttpServer &server) {
+    return AzureTableClient(ACCOUNT_NAME, ACCOUNT_KEY, server.Endpoint() + "/devstoreaccount1");
+}
+
+json WideRow() {
+    json e = Row("wire", "r");
+    size_t i = 0;
+    for (int64_t v : LargeIntegers()) e[PropName(i++)] = v;
+    for (int64_t v : SmallIntegers()) e[PropName(i++)] = v;
+    return e;
+}
+
+void CheckWideBody(const json &body) {
+    REQUIRE(body.is_object());
+    REQUIRE(body["PartitionKey"] == "wire");
+    REQUIRE(body["RowKey"] == "r");
+    REQUIRE_FALSE(body.contains("PartitionKey@odata.type"));
+    REQUIRE_FALSE(body.contains("RowKey@odata.type"));
+    size_t i = 0;
+    for (int64_t v : LargeIntegers()) {
+        const std::string name = PropName(i++);
+        INFO("large value " << v);
+        REQUIRE(body.contains(name));
+        REQUIRE(body[name].is_string());
+        REQUIRE(body[name].get<std::string>() == std::to_string(v));
+        REQUIRE(body.contains(name + "@odata.type"));
+        REQUIRE(body[name + "@odata.type"] == "Edm.Int64");
+    }
+    for (int64_t v : SmallIntegers()) {
+        const std::string name = PropName(i++);
+        INFO("small value " << v);
+        REQUIRE(body[name].is_number_integer());
+        REQUIRE(body[name].get<int64_t>() == v);
+        REQUIRE_FALSE(body.contains(name + "@odata.type"));
+    }
+}
+
+} // namespace
+
+TEST_CASE("Wire: UpsertEntity sends integers outside int32 as annotated Edm.Int64 strings", "[wire][stub]") {
+    StubHttpServer server({Reply(204, "")});
+    auto client = StubClient(server);
+    REQUIRE(client.UpsertEntity(TEST_TABLE, WideRow()));
+    REQUIRE(server.RequestCount() == 1);
+    CheckWideBody(LastBody(server));
+}
+
+TEST_CASE("Wire: the 1700000000000 clock value is a string with the annotation and 5 stays bare", "[wire][stub]") {
+    StubHttpServer server({Reply(204, "")});
+    auto client = StubClient(server);
+    json e = Row("wire", "clock");
+    e["anchor_wall_ms"] = 1700000000000LL;
+    e["count"] = 5;
+    REQUIRE(client.UpsertEntity(TEST_TABLE, e));
+    json body = LastBody(server);
+    REQUIRE(body["anchor_wall_ms"] == "1700000000000");
+    REQUIRE(body["anchor_wall_ms@odata.type"] == "Edm.Int64");
+    REQUIRE(body["count"].is_number_integer());
+    REQUIRE_FALSE(body.contains("count@odata.type"));
+}
+
+TEST_CASE("Wire: UpsertEntityAsync sends the same body", "[wire][stub]") {
+    StubHttpServer server({Reply(204, "")});
+    auto client = StubClient(server);
+    std::promise<bool> promise;
+    auto future = promise.get_future();
+    client.UpsertEntityAsync(TEST_TABLE, WideRow(), [&promise](bool ok) { promise.set_value(ok); });
+    REQUIRE(future.get());
+    CheckWideBody(LastBody(server));
+}
+
+TEST_CASE("Wire: a caller-supplied @odata.type annotation is left alone", "[wire][stub]") {
+    StubHttpServer server({Reply(204, "")});
+    auto client = StubClient(server);
+    json e = Row("wire", "own");
+    e["when"] = "2026-01-01T00:00:00Z";
+    e["when@odata.type"] = "Edm.DateTime";
+    e["big"] = 1700000000000LL;
+    REQUIRE(client.UpsertEntity(TEST_TABLE, e));
+    json body = LastBody(server);
+    REQUIRE(body["when"] == "2026-01-01T00:00:00Z");
+    REQUIRE(body["when@odata.type"] == "Edm.DateTime");
+    REQUIRE(body["big"] == "1700000000000");
+    REQUIRE(body["big@odata.type"] == "Edm.Int64");
+}
+
+TEST_CASE("Wire: BatchUpsertEntities carries the annotation in every sub-request", "[wire][stub]") {
+    StubResponse ok = Reply(202, "--b\r\nHTTP/1.1 204 No Content\r\n\r\n--b--\r\n");
+    StubHttpServer server({ok});
+    auto client = StubClient(server);
+    json second = WideRow();
+    second["RowKey"] = "r2";
+    REQUIRE(client.BatchUpsertEntities(TEST_TABLE, {WideRow(), second}));
+    auto bodies = BatchBodies(server.LastRequest().body);
+    REQUIRE(bodies.size() == 2);
+    CheckWideBody(bodies[0]);
+    REQUIRE(bodies[1]["RowKey"] == "r2");
+    REQUIRE(bodies[1]["p0"] == "1700000000000");
+    REQUIRE(bodies[1]["p0@odata.type"] == "Edm.Int64");
+}
+
+TEST_CASE("Wire: BatchUpsertEntitiesAsync carries the annotation", "[wire][stub]") {
+    StubHttpServer server({Reply(202, "--b\r\nHTTP/1.1 204 No Content\r\n\r\n--b--\r\n")});
+    auto client = StubClient(server);
+    std::promise<bool> promise;
+    auto future = promise.get_future();
+    client.BatchUpsertEntitiesAsync(TEST_TABLE, {WideRow()}, [&promise](bool ok) { promise.set_value(ok); });
+    REQUIRE(future.get());
+    auto bodies = BatchBodies(server.LastRequest().body);
+    REQUIRE(bodies.size() == 1);
+    CheckWideBody(bodies[0]);
+}
+
+TEST_CASE("Wire: an unsigned integer above INT64_MAX is refused and nothing is sent", "[wire][stub]") {
+    const uint64_t tooBig = static_cast<uint64_t>(kInt64Max) + 1;
+    json e = Row("wire", "u");
+    e["huge"] = tooBig;
+    REQUIRE(e["huge"].is_number_unsigned());
+
+    {
+        StubHttpServer server({Reply(204, "")});
+        auto client = StubClient(server);
+        REQUIRE_FALSE(client.UpsertEntity(TEST_TABLE, e));
+        REQUIRE(server.RequestCount() == 0);
+    }
+    {
+        StubHttpServer server({Reply(202, "")});
+        auto client = StubClient(server);
+        REQUIRE_FALSE(client.BatchUpsertEntities(TEST_TABLE, {Row("wire", "ok"), e}));
+        REQUIRE(server.RequestCount() == 0);
+    }
+    {
+        StubHttpServer server({Reply(204, "")});
+        auto client = StubClient(server);
+        std::promise<bool> promise;
+        auto future = promise.get_future();
+        client.UpsertEntityAsync(TEST_TABLE, e, [&promise](bool ok) { promise.set_value(ok); });
+        REQUIRE_FALSE(future.get());
+        REQUIRE(server.RequestCount() == 0);
+    }
+    {
+        StubHttpServer server({Reply(202, "")});
+        auto client = StubClient(server);
+        std::promise<bool> promise;
+        auto future = promise.get_future();
+        client.BatchUpsertEntitiesAsync(TEST_TABLE, {e}, [&promise](bool ok) { promise.set_value(ok); });
+        REQUIRE_FALSE(future.get());
+        REQUIRE(server.RequestCount() == 0);
+    }
+}
+
+TEST_CASE("Wire: an unsigned integer within INT64_MAX is sent like a signed one", "[wire][stub]") {
+    StubHttpServer server({Reply(204, "")});
+    auto client = StubClient(server);
+    json e = Row("wire", "u2");
+    e["val"] = static_cast<uint64_t>(kInt64Max);
+    REQUIRE(client.UpsertEntity(TEST_TABLE, e));
+    json body = LastBody(server);
+    REQUIRE(body["val"] == "9223372036854775807");
+    REQUIRE(body["val@odata.type"] == "Edm.Int64");
+}
+
+// ---- reader ----
+
+namespace {
+
+std::string AnnotatedRow() {
+    json row = {{"PartitionKey", "p"}, {"RowKey", "r"}, {"odata.metadata", "http://x/$metadata#t/@Element"},
+                {"odata.etag", "W/\"datetime'2026'\""}, {"Timestamp", "2026-01-01T00:00:00.0000000Z"},
+                {"Timestamp@odata.type", "Edm.DateTime"}, {"plain", 7}, {"text", "[5]"}};
+    size_t i = 0;
+    for (int64_t v : {int64_t{0}, int64_t{2147483648LL}, int64_t{-2147483649LL}, kTwo53, kInt64Min, kInt64Max}) {
+        row[PropName(i)] = std::to_string(v);
+        row[PropName(i) + "@odata.type"] = "Edm.Int64";
+        ++i;
+    }
+    row["badint"] = "12x";
+    row["badint@odata.type"] = "Edm.Int64";
+    row["overflow"] = "9223372036854775808";
+    row["overflow@odata.type"] = "Edm.Int64";
+    row["dbl"] = 1.5;
+    row["dbl@odata.type"] = "Edm.Double";
+    row["guid"] = "0b2e1d7c-0000-4000-8000-000000000000";
+    row["guid@odata.type"] = "Edm.Guid";
+    return row.dump();
+}
+
+void CheckConvertedRow(const json &row) {
+    REQUIRE(row.is_object());
+    const std::vector<int64_t> expect = {0, 2147483648LL, -2147483649LL, kTwo53, kInt64Min, kInt64Max};
+    for (size_t i = 0; i < expect.size(); ++i) {
+        INFO("property " << PropName(i));
+        REQUIRE(row[PropName(i)].is_number_integer());
+        REQUIRE(row[PropName(i)].get<int64_t>() == expect[i]);
+    }
+    REQUIRE(row["plain"] == 7);
+    REQUIRE(row["text"] == "[5]");
+    REQUIRE(row["badint"].is_string());
+    REQUIRE(row["badint"] == "12x");
+    REQUIRE(row["overflow"].is_string());
+    REQUIRE(row["overflow"] == "9223372036854775808");
+    REQUIRE(row["dbl"] == 1.5);
+    REQUIRE(row["guid"] == "0b2e1d7c-0000-4000-8000-000000000000");
+    REQUIRE(row["Timestamp"] == "2026-01-01T00:00:00.0000000Z");
+    for (auto it = row.begin(); it != row.end(); ++it) {
+        const std::string &k = it.key();
+        INFO("key " << k);
+        REQUIRE(k.find("@odata.type") == std::string::npos);
+        REQUIRE(k.rfind("odata.", 0) != 0);
+    }
+}
+
+} // namespace
+
+TEST_CASE("Reader: requests minimalmetadata", "[reader][stub]") {
+    StubHttpServer server({Reply(200, "{\"PartitionKey\":\"p\",\"RowKey\":\"r\"}")});
+    auto client = StubClient(server);
+    client.GetEntityChecked(TEST_TABLE, "p", "r");
+    REQUIRE(server.LastRequest().headers["accept"] == "application/json;odata=minimalmetadata");
+}
+
+TEST_CASE("Reader: query pages request minimalmetadata", "[reader][stub]") {
+    StubHttpServer server({Reply(200, "{\"value\":[]}")});
+    auto client = StubClient(server);
+    client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'p'");
+    REQUIRE(server.LastRequest().headers["accept"] == "application/json;odata=minimalmetadata");
+}
+
+TEST_CASE("Reader: GetEntityChecked converts annotated Int64 strings and strips metadata", "[reader][stub]") {
+    auto result = StubGet(Reply(200, AnnotatedRow()));
+    REQUIRE(result.ok);
+    REQUIRE(result.found);
+    CheckConvertedRow(result.row);
+}
+
+TEST_CASE("Reader: GetEntityCheckedAsync converts", "[reader][stub]") {
+    StubHttpServer server({Reply(200, AnnotatedRow())});
+    auto client = StubClient(server);
+    std::promise<AzureTableClient::EntityResult> promise;
+    auto future = promise.get_future();
+    client.GetEntityCheckedAsync(TEST_TABLE, "p", "r",
+        [&promise](AzureTableClient::EntityResult r) { promise.set_value(std::move(r)); });
+    auto result = future.get();
+    REQUIRE(result.found);
+    CheckConvertedRow(result.row);
+}
+
+TEST_CASE("Reader: the legacy GetEntity converts", "[reader][stub]") {
+    StubHttpServer server({Reply(200, AnnotatedRow())});
+    auto client = StubClient(server);
+    CheckConvertedRow(client.GetEntity(TEST_TABLE, "p", "r"));
+}
+
+TEST_CASE("Reader: GetEntityAsync converts", "[reader][stub]") {
+    StubHttpServer server({Reply(200, AnnotatedRow())});
+    auto client = StubClient(server);
+    std::promise<json> promise;
+    auto future = promise.get_future();
+    client.GetEntityAsync(TEST_TABLE, "p", "r", [&promise](json r) { promise.set_value(std::move(r)); });
+    CheckConvertedRow(future.get());
+}
+
+TEST_CASE("Reader: QueryEntitiesChecked converts every row on every page", "[reader][stub]") {
+    const std::string page = "{\"odata.metadata\":\"http://x/$metadata#t\",\"value\":[" + AnnotatedRow() + "]}";
+    StubResponse first = Reply(200, page);
+    first.headers["x-ms-continuation-NextPartitionKey"] = "np";
+    first.headers["x-ms-continuation-NextRowKey"] = "nr";
+    StubResponse second = Reply(200, page);
+    StubHttpServer server({first, second});
+    auto client = StubClient(server);
+    auto result = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'p'");
+    REQUIRE(result.ok);
+    REQUIRE(result.rows.size() == 2);
+    for (const auto &row : result.rows) CheckConvertedRow(row);
+}
+
+TEST_CASE("Reader: QueryEntitiesCheckedAsync, QueryEntities and QueryEntitiesAsync convert", "[reader][stub]") {
+    const std::string page = "{\"value\":[" + AnnotatedRow() + "]}";
+    {
+        StubHttpServer server({Reply(200, page)});
+        auto client = StubClient(server);
+        std::promise<AzureTableClient::QueryResult> promise;
+        auto future = promise.get_future();
+        client.QueryEntitiesCheckedAsync(TEST_TABLE, "PartitionKey eq 'p'",
+            [&promise](AzureTableClient::QueryResult r) { promise.set_value(std::move(r)); });
+        auto result = future.get();
+        REQUIRE(result.ok);
+        REQUIRE(result.rows.size() == 1);
+        CheckConvertedRow(result.rows[0]);
+    }
+    {
+        StubHttpServer server({Reply(200, page)});
+        auto client = StubClient(server);
+        auto rows = client.QueryEntities(TEST_TABLE, "PartitionKey eq 'p'");
+        REQUIRE(rows.size() == 1);
+        CheckConvertedRow(rows[0]);
+    }
+    {
+        StubHttpServer server({Reply(200, page)});
+        auto client = StubClient(server);
+        std::promise<std::vector<json>> promise;
+        auto future = promise.get_future();
+        client.QueryEntitiesAsync(TEST_TABLE, "PartitionKey eq 'p'",
+            [&promise](std::vector<json> r) { promise.set_value(std::move(r)); });
+        auto rows = future.get();
+        REQUIRE(rows.size() == 1);
+        CheckConvertedRow(rows[0]);
+    }
+}
+
+TEST_CASE("Reader: a row without annotations keeps today's shape", "[reader][stub]") {
+    auto result = StubGet(Reply(200, "{\"PartitionKey\":\"p\",\"RowKey\":\"r\",\"n\":3,\"s\":\"x\"}"));
+    REQUIRE(result.found);
+    REQUIRE(result.row == json({{"PartitionKey", "p"}, {"RowKey", "r"}, {"n", 3}, {"s", "x"}}));
+}
+
+TEST_CASE("Reader: failure reporting is unchanged and carries no body", "[reader][stub]") {
+    const std::string secret = "SECRET-BODY-TEXT-4412";
+    auto failed = StubGet(Reply(500, "{\"detail\":\"" + secret + "\"}"));
+    REQUIRE_FALSE(failed.ok);
+    REQUIRE(failed.failure == AzureTableClient::Failure::http_status);
+    REQUIRE(failed.http_status == 500);
+    REQUIRE(failed.row.is_null());
+    auto malformed = StubGet(Reply(200, "nope"));
+    REQUIRE(malformed.failure == AzureTableClient::Failure::malformed_response);
+    auto absent = StubGet(Reply(404, RESOURCE_NOT_FOUND));
+    REQUIRE(absent.ok);
+    REQUIRE_FALSE(absent.found);
+}
+
+#endif // __linux__
+
+// ---------------------------------------------------------------------------
+// Large-integer round trip against Azurite [azurite-int64]
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string Base64Hmac(const std::string &keyB64, const std::string &text) {
+    std::vector<unsigned char> key(keyB64.size());
+    int n = EVP_DecodeBlock(key.data(), reinterpret_cast<const unsigned char *>(keyB64.data()),
+                            static_cast<int>(keyB64.size()));
+    size_t pad = 0;
+    while (pad < keyB64.size() && keyB64[keyB64.size() - 1 - pad] == '=') ++pad;
+    key.resize(static_cast<size_t>(n) - pad);
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int len = 0;
+    HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()),
+         reinterpret_cast<const unsigned char *>(text.data()), text.size(), digest, &len);
+    std::vector<unsigned char> out(((len + 2) / 3) * 4 + 1);
+    int m = EVP_EncodeBlock(out.data(), digest, static_cast<int>(len));
+    return std::string(reinterpret_cast<char *>(out.data()), static_cast<size_t>(m));
+}
+
+size_t RawSink(char *p, size_t s, size_t n, void *u) {
+    static_cast<std::string *>(u)->append(p, s * n);
+    return s * n;
+}
+
+// A raw signed GET of one entity with minimalmetadata, independent of the client under test.
+json RawGetMinimal(const std::string &endpoint, const std::string &account, const std::string &key,
+                   const std::string &table, const std::string &pk, const std::string &rk) {
+    const std::string path = "/" + account + "/" + table + "(PartitionKey='" + pk + "',RowKey='" + rk + "')";
+    std::time_t now = std::time(nullptr);
+    std::tm gmt{};
+    gmtime_r(&now, &gmt);
+    char buf[64];
+    std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &gmt);
+    const std::string date = buf;
+    const std::string sts = "GET\n\n\n" + date + "\n/" + account + path;
+    const std::string auth = "SharedKey " + account + ":" + Base64Hmac(key, sts);
+
+    CURL *curl = curl_easy_init();
+    std::string body;
+    curl_easy_setopt(curl, CURLOPT_URL, (endpoint + "/" + table + "(PartitionKey='" + pk + "',RowKey='" + rk + "')").c_str());
+    struct curl_slist *h = nullptr;
+    h = curl_slist_append(h, "Accept: application/json;odata=minimalmetadata");
+    h = curl_slist_append(h, ("x-ms-date: " + date).c_str());
+    h = curl_slist_append(h, "x-ms-version: 2021-12-02");
+    h = curl_slist_append(h, ("Authorization: " + auth).c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, h);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, RawSink);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+    curl_easy_perform(curl);
+    curl_slist_free_all(h);
+    curl_easy_cleanup(curl);
+    return json::parse(body, nullptr, false);
+}
+
+} // namespace
+
+TEST_CASE("Azurite: boundary integers are stored as Edm.Int64 and read back equal", "[azurite-int64]") {
+    REQUIRE_AZURITE();
+    AzureTableClient client(ACCOUNT_NAME, ACCOUNT_KEY, TABLE_ENDPOINT);
+    const std::vector<int64_t> values = {0, 2147483647LL, 2147483648LL, -2147483648LL, -2147483649LL,
+                                         kTwo53, kInt64Min, kInt64Max};
+    json e = Row("int64_round", "boundary");
+    for (size_t i = 0; i < values.size(); ++i) e[PropName(i)] = values[i];
+    REQUIRE(client.UpsertEntity(TEST_TABLE, e));
+
+    json raw = RawGetMinimal(TABLE_ENDPOINT, ACCOUNT_NAME, ACCOUNT_KEY, TEST_TABLE, "int64_round", "boundary");
+    REQUIRE(raw.is_object());
+    for (size_t i = 0; i < values.size(); ++i) {
+        const bool large = values[i] > 2147483647LL || values[i] < -2147483648LL;
+        INFO("value " << values[i]);
+        if (large) {
+            REQUIRE(raw.contains(PropName(i) + "@odata.type"));
+            REQUIRE(raw[PropName(i) + "@odata.type"] == "Edm.Int64");
+            REQUIRE(raw[PropName(i)] == std::to_string(values[i]));
+        }
+    }
+
+    auto got = client.GetEntityChecked(TEST_TABLE, "int64_round", "boundary");
+    REQUIRE(got.ok);
+    REQUIRE(got.found);
+    for (size_t i = 0; i < values.size(); ++i) {
+        INFO("value " << values[i]);
+        REQUIRE(got.row[PropName(i)].is_number_integer());
+        REQUIRE(got.row[PropName(i)].get<int64_t>() == values[i]);
+    }
+    for (auto it = got.row.begin(); it != got.row.end(); ++it) {
+        REQUIRE(it.key().find("@odata.type") == std::string::npos);
+        REQUIRE(it.key().rfind("odata.", 0) != 0);
+    }
+
+    auto query = client.QueryEntitiesChecked(TEST_TABLE, "PartitionKey eq 'int64_round'");
+    REQUIRE(query.ok);
+    REQUIRE(query.rows.size() == 1);
+    REQUIRE(query.rows[0][PropName(6)].get<int64_t>() == kInt64Min);
+}
+
+// ---------------------------------------------------------------------------
+// Real-account check [real-account]
+// ---------------------------------------------------------------------------
+//
+// Opt-in: this case talks to a real Azure storage account, so it cannot run in CI.
+// It is skipped (reported as skipped, not failed) unless AZURE_TABLE_ENDPOINT,
+// AZURE_TABLE_ACCOUNT and AZURE_TABLE_KEY are all set, and it is excluded from the
+// default `make check` run by the "[.]" hidden tag. Run it by name:
+//   AZURE_TABLE_ENDPOINT=... AZURE_TABLE_ACCOUNT=... AZURE_TABLE_KEY=... \
+//     ./test_azure_table_client "[real-account]"
+// It prints only the pass/fail line and the integers; never the key, the endpoint
+// or any row body.
+
+TEST_CASE("Real account: boundary integers round-trip through the storage service", "[.][real-account]") {
+    const char *endpoint = std::getenv("AZURE_TABLE_ENDPOINT");
+    const char *account = std::getenv("AZURE_TABLE_ACCOUNT");
+    const char *key = std::getenv("AZURE_TABLE_KEY");
+    if (!endpoint || !account || !key || !*endpoint || !*account || !*key) {
+        SKIP("AZURE_TABLE_ENDPOINT, AZURE_TABLE_ACCOUNT and AZURE_TABLE_KEY are not all set");
+    }
+
+    const std::string table = "fidelitycheck";
+    AzureTableClient client(account, key, endpoint);
+    REQUIRE(client.CreateTableIfNotExists(table));
+
+    const std::vector<int64_t> values = {2147483648LL, -2147483649LL, 1700000000000LL, kTwo53, -kTwo53,
+                                         kInt64Min, kInt64Max};
+    json e = Row("fidelity", "boundary");
+    for (size_t i = 0; i < values.size(); ++i) e[PropName(i)] = values[i];
+    e["plain"] = 5;
+    e["text"] = "[5]";
+    REQUIRE(client.UpsertEntity(table, e));
+
+    auto got = client.GetEntityChecked(table, "fidelity", "boundary");
+    bool pass = got.ok && got.found;
+    size_t matched = 0;
+    if (pass) {
+        for (size_t i = 0; i < values.size(); ++i) {
+            if (got.row[PropName(i)].is_number_integer() && got.row[PropName(i)].get<int64_t>() == values[i])
+                ++matched;
+        }
+        pass = matched == values.size() && got.row["plain"] == 5 && got.row["text"] == "[5]";
+    }
+    client.DeleteEntity(table, "fidelity", "boundary");
+
+    std::cout << "real-account: " << matched << " values round-tripped" << (pass ? " PASS" : " FAIL");
+    for (int64_t v : values) std::cout << ' ' << v;
+    std::cout << std::endl;
+    REQUIRE(pass);
 }

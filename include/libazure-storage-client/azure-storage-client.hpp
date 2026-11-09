@@ -56,6 +56,8 @@ public:
                                const std::string &row_key,
                                std::function<void(EntityResult)> callback);
 
+    // Integer properties outside int32 are sent as Edm.Int64 strings and read back as integers;
+    // an unsigned value above INT64_MAX makes the call return false without sending.
     bool UpsertEntity(const std::string &table_name,
                       const nlohmann::json &entity);
 
